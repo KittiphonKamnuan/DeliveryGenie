@@ -51,10 +51,4 @@ assignees: Jutinut-BBBOMB
 
 ## 📈 Success Metrics
 - Data accuracy: >99%
-- Processing speed: 
 - System reliability: >99%
-
-## ⏱️ Estimated Hours:
-
-## 🔍 Testing Data
-<!-- Sample data หรือ test scenarios -->
