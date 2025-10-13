@@ -1,0 +1,185 @@
+// ===================================
+// File: prisma/schema.prisma
+// Database Schema (Prisma ORM)
+// ===================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Customer Model
+model Customer {
+  id              String   @id @default(uuid())
+  name            String
+  phone           String   @unique
+  email           String?
+  address_line1   String
+  address_line2   String?
+  district        String
+  city            String
+  postal_code     String?
+  latitude        Float
+  longitude       Float
+  delivery_notes  String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  orders          Order[]
+
+  @@index([phone])
+  @@index([latitude, longitude])
+}
+
+// Product Model
+model Product {
+  id                      String   @id @default(uuid())
+  name                    String
+  category                String   // hot_food, frozen, chilled, beverage, snack, etc.
+  base_price              Float
+  temperature_requirement String   // hot, frozen, chilled, cool, ambient
+  typical_expiration_hours Int     // อายุมาตรฐาน (ชั่วโมง)
+  is_fragile              Boolean  @default(false)
+  is_active               Boolean  @default(true)
+  created_at              DateTime @default(now())
+  updated_at              DateTime @updatedAt
+
+  order_items             OrderItem[]
+
+  @@index([category])
+  @@index([temperature_requirement])
+}
+
+// Order Model
+model Order {
+  id                    String   @id @default(uuid())
+  customer_id           String
+  order_date            DateTime @default(now())
+  delivery_date         DateTime
+  delivery_window_start DateTime
+  delivery_window_end   DateTime
+  customer_priority     String   // urgent, high, standard, economy
+  order_status          String   @default("pending") // pending, assigned, in_transit, delivered, failed
+
+  // Address info (denormalized for performance)
+  delivery_address      String
+  delivery_latitude     Float
+  delivery_longitude    Float
+
+  // Priority calculation results
+  priority_score        Float?
+  priority_class        String?  // critical, high, medium, low
+  priority_rank         Int?
+  priority_breakdown    Json?    // Store detailed breakdown
+
+  // Timestamps
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  // Relations
+  customer              Customer @relation(fields: [customer_id], references: [id])
+  order_items           OrderItem[]
+  deliveries            Delivery[]
+
+  @@index([order_status])
+  @@index([delivery_date])
+  @@index([priority_score])
+  @@index([priority_class])
+}
+
+// Order Item Model
+model OrderItem {
+  id                  String   @id @default(uuid())
+  order_id            String
+  product_id          String
+  quantity            Int
+  unit_price          Float
+  expiration_datetime DateTime // วันหมดอายุจริงของสินค้านี้
+
+  created_at          DateTime @default(now())
+
+  // Relations
+  order               Order    @relation(fields: [order_id], references: [id])
+  product             Product  @relation(fields: [product_id], references: [id])
+
+  @@index([order_id])
+}
+
+// Driver Model
+model Driver {
+  id                  String   @id @default(uuid())
+  first_name          String
+  last_name           String
+  phone               String   @unique
+  email               String?
+  license_number      String
+  status              String   @default("active") // active, inactive, on_leave
+  rating              Float?
+  total_deliveries    Int      @default(0)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  deliveries          Delivery[]
+
+  @@index([status])
+}
+
+// Vehicle Model
+model Vehicle {
+  id                  String   @id @default(uuid())
+  driver_id           String?
+  vehicle_type        String   // motorcycle, van, truck
+  license_plate       String   @unique
+  temperature_zones   Json?    // ช่องเก็บสินค้าแบ่งตามอุณหภูมิ
+  capacity_weight     Float
+  current_status      String   @default("available") // available, in_use, maintenance
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  deliveries          Delivery[]
+
+  @@index([current_status])
+}
+
+// Delivery Model
+model Delivery {
+  id                  String   @id @default(uuid())
+  order_id            String
+  driver_id           String
+  vehicle_id          String
+  route_id            String?
+
+  delivery_status     String   @default("pending") // pending, picked_up, in_transit, delivered, failed
+  pickup_time         DateTime?
+  delivery_time       DateTime?
+
+  // Performance tracking
+  planned_arrival     DateTime?
+  actual_arrival      DateTime?
+  delay_minutes       Int?
+
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  // Relations
+  order               Order    @relation(fields: [order_id], references: [id])
+  driver              Driver   @relation(fields: [driver_id], references: [id])
+  vehicle             Vehicle  @relation(fields: [vehicle_id], references: [id])
+
+  @@index([delivery_status])
+  @@index([driver_id])
+}
+
+// Priority Configuration Model (for admin adjustments)
+model PriorityConfig {
+  id                  String   @id @default(uuid())
+  config_name         String   @unique
+  weights             Json     // Store weight configuration
+  is_active           Boolean  @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+}

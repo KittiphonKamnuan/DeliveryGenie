@@ -1,17 +1,22 @@
 {
-  "name": "my-app",
-  "version": "0.1.0",
+  "name": "deliverygenie",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "db:generate": "prisma generate"
   },
   "dependencies": {
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "next": "15.5.3"
+    "next": "15.5.3",
+    "@prisma/client": "^5.0.0",
+    "lucide-react": "^0.460.0"
   },
   "devDependencies": {
     "typescript": "^5",
@@ -22,6 +27,7 @@
     "tailwindcss": "^4",
     "eslint": "^9",
     "eslint-config-next": "15.5.3",
-    "@eslint/eslintrc": "^3"
+    "@eslint/eslintrc": "^3",
+    "prisma": "^5.0.0"
   }
 }

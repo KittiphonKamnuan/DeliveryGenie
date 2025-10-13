@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+:root {
+  /* 7-Eleven Brand Colors */
+  --seven-green: #00A550;
+  --seven-green-dark: #00693E;
+  --seven-orange: #F26F21;
+  --seven-red: #EC1D25;
+  --seven-gray: #F5F5F5;
+  --seven-text: #333333;
+
+  --background: #ffffff;
+  --foreground: #333333;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-seven-green: var(--seven-green);
+  --color-seven-green-dark: var(--seven-green-dark);
+  --color-seven-orange: var(--seven-orange);
+  --color-seven-red: var(--seven-red);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* 7-Eleven inspired utility classes */
+.bg-seven-green {
+  background-color: var(--seven-green);
+}
+
+.bg-seven-green-dark {
+  background-color: var(--seven-green-dark);
+}
+
+.bg-seven-orange {
+  background-color: var(--seven-orange);
+}
+
+.bg-seven-red {
+  background-color: var(--seven-red);
+}
+
+.text-seven-green {
+  color: var(--seven-green);
+}
+
+.border-seven-green {
+  border-color: var(--seven-green);
+}
+
+.hover\:bg-seven-green-dark:hover {
+  background-color: var(--seven-green-dark);
+}
