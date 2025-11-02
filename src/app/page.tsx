@@ -7,6 +7,8 @@
 
 import { useState, useEffect } from 'react';
 import { Calculator, Package, Truck, Clock, ThermometerSnowflake, AlertTriangle } from 'lucide-react';
+import Link from 'next/link';
+import { Menu} from 'lucide-react';
 
 // ===================================
 // Types & Interfaces
@@ -245,6 +247,7 @@ export default function DeliveryPriorityDashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [sortedOrders, setSortedOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -326,6 +329,45 @@ export default function DeliveryPriorityDashboard() {
               </div>
               <p className="text-green-50">ระบบจัดลำดับความสำคัญการจัดส่ง</p>
             </div>
+
+            <div className="relative">
+      {/* Hamburger Button */}
+      <button
+        className="flex items-center justify-center p-2 bg-seven-green rounded-lg shadow-lg fixed top-4 left-4 z-50"
+        onClick={() => setMenuOpen(!menuOpen)}
+      >
+        <Menu className="w-6 h-6 text-white" />
+      </button>
+
+      {/* Dropdown Menu */}
+      {menuOpen && (
+        <div className="fixed top-16 left-4 w-48 bg-white text-gray-800 rounded-lg shadow-lg z-50">
+          <Link
+            href="/"
+            className="block px-4 py-2 hover:bg-gray-100"
+            onClick={() => setMenuOpen(false)}
+          >
+            🌟 Priority System
+          </Link>
+          <Link
+            href="/driver-performance"
+            className="block px-4 py-2 hover:bg-gray-100"
+            onClick={() => setMenuOpen(false)}
+          >
+            🚚 Driver Performance
+          </Link>
+          <Link 
+            href="/analytics"
+            className="block px-4 py-2 hover:bg-gray-100"
+            onClick={() => setMenuOpen(false)}
+          >
+            📊 Real-time Analytics
+          </Link>
+        </div>
+      )}
+    </div>
+          
+
             <div className="text-right bg-white/10 px-6 py-3 rounded-lg backdrop-blur-sm">
               <div className="text-sm text-green-50">เวลาปัจจุบัน</div>
               <div className="text-2xl font-bold">
