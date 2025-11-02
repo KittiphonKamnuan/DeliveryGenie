@@ -1,5 +1,6 @@
 // ===================================
 // File: prisma/schema.prisma
+// DeliveryGenie: AI-based Route Optimization
 // Database Schema (Prisma ORM)
 // ===================================
 
@@ -11,6 +12,10 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+// ============================================
+// 1. CUSTOMER & STORE MANAGEMENT
+// ============================================
 
 // Customer Model
 model Customer {
@@ -26,6 +31,7 @@ model Customer {
   latitude        Float
   longitude       Float
   delivery_notes  String?
+  priority_level  String   @default("standard") // urgent, high, standard, economy
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 
@@ -33,48 +39,133 @@ model Customer {
 
   @@index([phone])
   @@index([latitude, longitude])
+  @@index([priority_level])
+  @@map("customers")
 }
+
+// 7-Eleven Store Model (6000+ branches)
+model Store {
+  id              String   @id @default(uuid())
+  store_code      String   @unique
+  name            String
+  branch_name     String?
+  address         String
+  district        String
+  city            String
+  province        String
+  postal_code     String?
+  latitude        Float
+  longitude       Float
+  phone           String?
+  opening_hours   Json?    // { "mon": "00:00-24:00", ... }
+  is_24_hours     Boolean  @default(true)
+  is_active       Boolean  @default(true)
+  has_parking     Boolean  @default(false)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  // Relations
+  routes_origin   Route[]  @relation("OriginStore")
+  inventories     StoreInventory[]
+
+  @@index([latitude, longitude])
+  @@index([is_active])
+  @@index([city, district])
+  @@map("stores")
+}
+
+// Store Inventory (สินค้าในสต็อค)
+model StoreInventory {
+  id              String   @id @default(uuid())
+  store_id        String
+  product_id      String
+  quantity        Int
+  expiration_date DateTime?
+  last_updated    DateTime @updatedAt
+
+  store           Store    @relation(fields: [store_id], references: [id])
+  product         Product  @relation(fields: [product_id], references: [id])
+
+  @@unique([store_id, product_id])
+  @@index([store_id])
+  @@index([product_id])
+  @@map("store_inventories")
+}
+
+// ============================================
+// 2. PRODUCT MANAGEMENT
+// ============================================
 
 // Product Model
 model Product {
   id                      String   @id @default(uuid())
+  sku                     String   @unique
   name                    String
-  category                String   // hot_food, frozen, chilled, beverage, snack, etc.
+  description             String?
+  category                String   // hot_food, frozen, chilled, beverage, snack, medicine
   base_price              Float
   temperature_requirement String   // hot, frozen, chilled, cool, ambient
-  typical_expiration_hours Int     // อายุมาตรฐาน (ชั่วโมง)
+  temp_min_celsius        Float?   // อุณหภูมิต่ำสุด
+  temp_max_celsius        Float?   // อุณหภูมิสูงสุด
+  typical_expiration_hours Int    // อายุมาตรฐาน (ชั่วโมง)
   is_fragile              Boolean  @default(false)
+  weight_kg               Float?
+  dimensions              Json?    // { "width": 10, "height": 20, "depth": 5 }
   is_active               Boolean  @default(true)
   created_at              DateTime @default(now())
   updated_at              DateTime @updatedAt
 
   order_items             OrderItem[]
+  inventories             StoreInventory[]
 
   @@index([category])
   @@index([temperature_requirement])
+  @@index([sku])
+  @@map("products")
 }
+
+// ============================================
+// 3. ORDER MANAGEMENT
+// ============================================
 
 // Order Model
 model Order {
   id                    String   @id @default(uuid())
+  order_number          String   @unique // ORD-20250101-0001
   customer_id           String
+
+  // Order Timing
   order_date            DateTime @default(now())
   delivery_date         DateTime
   delivery_window_start DateTime
   delivery_window_end   DateTime
+
+  // Customer & Priority
   customer_priority     String   // urgent, high, standard, economy
-  order_status          String   @default("pending") // pending, assigned, in_transit, delivered, failed
+  order_status          String   @default("pending") // pending, assigned, in_transit, delivered, failed, cancelled
 
   // Address info (denormalized for performance)
   delivery_address      String
   delivery_latitude     Float
   delivery_longitude    Float
+  delivery_notes        String?
+
+  // Financial
+  subtotal              Float
+  tax                   Float    @default(0)
+  shipping_fee          Float    @default(0)
+  total_amount          Float
 
   // Priority calculation results
   priority_score        Float?
   priority_class        String?  // critical, high, medium, low
   priority_rank         Int?
   priority_breakdown    Json?    // Store detailed breakdown
+
+  // Performance Tracking
+  estimated_delivery    DateTime?
+  actual_delivery       DateTime?
+  delay_minutes         Int?
 
   // Timestamps
   created_at            DateTime @default(now())
@@ -84,11 +175,15 @@ model Order {
   customer              Customer @relation(fields: [customer_id], references: [id])
   order_items           OrderItem[]
   deliveries            Delivery[]
+  priority_logs         PriorityCalculationLog[]
 
   @@index([order_status])
   @@index([delivery_date])
   @@index([priority_score])
   @@index([priority_class])
+  @@index([order_number])
+  @@index([customer_id])
+  @@map("orders")
 }
 
 // Order Item Model
@@ -98,69 +193,112 @@ model OrderItem {
   product_id          String
   quantity            Int
   unit_price          Float
+  subtotal            Float
   expiration_datetime DateTime // วันหมดอายุจริงของสินค้านี้
+  temperature_zone    String?  // hot, frozen, chilled, ambient
 
   created_at          DateTime @default(now())
 
   // Relations
-  order               Order    @relation(fields: [order_id], references: [id])
+  order               Order    @relation(fields: [order_id], references: [id], onDelete: Cascade)
   product             Product  @relation(fields: [product_id], references: [id])
 
   @@index([order_id])
+  @@index([product_id])
+  @@map("order_items")
 }
+
+// ============================================
+// 4. DRIVER & VEHICLE MANAGEMENT
+// ============================================
 
 // Driver Model
 model Driver {
   id                  String   @id @default(uuid())
+  employee_id         String   @unique
   first_name          String
   last_name           String
   phone               String   @unique
   email               String?
   license_number      String
-  status              String   @default("active") // active, inactive, on_leave
+  license_type        String   // A, B, C
+  status              String   @default("active") // active, inactive, on_leave, suspended
   rating              Float?
   total_deliveries    Int      @default(0)
+  on_time_rate        Float?   // % จัดส่งตรงเวลา
+  current_vehicle_id  String?
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 
   deliveries          Delivery[]
+  gps_trackings       GPSTracking[]
 
   @@index([status])
+  @@index([phone])
+  @@index([employee_id])
+  @@map("drivers")
 }
 
 // Vehicle Model
 model Vehicle {
   id                  String   @id @default(uuid())
-  driver_id           String?
+  vehicle_number      String   @unique
   vehicle_type        String   // motorcycle, van, truck
   license_plate       String   @unique
-  temperature_zones   Json?    // ช่องเก็บสินค้าแบ่งตามอุณหภูมิ
-  capacity_weight     Float
-  current_status      String   @default("available") // available, in_use, maintenance
+  temperature_zones   Json?    // [{ "zone": "hot", "capacity": 50 }, ...]
+  capacity_weight_kg  Float
+  capacity_volume_m3  Float?
+  fuel_type           String?  // gasoline, diesel, electric
+  fuel_efficiency     Float?   // km/liter
+  current_status      String   @default("available") // available, in_use, maintenance, broken
+  last_maintenance    DateTime?
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
 
   deliveries          Delivery[]
+  gps_trackings       GPSTracking[]
 
   @@index([current_status])
+  @@index([vehicle_type])
+  @@map("vehicles")
 }
+
+// ============================================
+// 5. DELIVERY & ROUTE MANAGEMENT
+// ============================================
 
 // Delivery Model
 model Delivery {
   id                  String   @id @default(uuid())
+  delivery_number     String   @unique // DEL-20250101-0001
   order_id            String
   driver_id           String
   vehicle_id          String
   route_id            String?
 
-  delivery_status     String   @default("pending") // pending, picked_up, in_transit, delivered, failed
+  delivery_status     String   @default("pending") // pending, assigned, picked_up, in_transit, delivered, failed, cancelled
+  pickup_location     String?
+  pickup_latitude     Float?
+  pickup_longitude    Float?
   pickup_time         DateTime?
+
+  delivery_location   String?
+  delivery_latitude   Float?
+  delivery_longitude  Float?
   delivery_time       DateTime?
 
   // Performance tracking
-  planned_arrival     DateTime?
-  actual_arrival      DateTime?
-  delay_minutes       Int?
+  estimated_distance_km Float?
+  actual_distance_km    Float?
+  estimated_duration_min Int?
+  actual_duration_min    Int?
+  planned_arrival       DateTime?
+  actual_arrival        DateTime?
+  delay_minutes         Int?
+
+  // Issues
+  failure_reason      String?
+  notes               String?
 
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
@@ -169,17 +307,399 @@ model Delivery {
   order               Order    @relation(fields: [order_id], references: [id])
   driver              Driver   @relation(fields: [driver_id], references: [id])
   vehicle             Vehicle  @relation(fields: [vehicle_id], references: [id])
+  route               Route?   @relation(fields: [route_id], references: [id])
 
   @@index([delivery_status])
   @@index([driver_id])
+  @@index([vehicle_id])
+  @@index([route_id])
+  @@index([delivery_number])
+  @@map("deliveries")
+}
+
+// Route Model (เส้นทางการจัดส่ง)
+model Route {
+  id                  String   @id @default(uuid())
+  route_number        String   @unique // ROUTE-20250101-001
+  origin_store_id     String
+  driver_id           String?
+  vehicle_id          String?
+
+  route_date          DateTime
+  route_status        String   @default("planned") // planned, in_progress, completed, cancelled
+
+  // Route Optimization Data
+  total_distance_km   Float?
+  total_duration_min  Int?
+  total_orders        Int      @default(0)
+  optimization_score  Float?
+  route_polyline      String?  // Encoded polyline from Google Maps
+  route_geometry      Json?    // GeoJSON
+
+  // Google Maps API Data
+  google_route_token  String?
+  traffic_condition   String?  // light, moderate, heavy
+
+  started_at          DateTime?
+  completed_at        DateTime?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  // Relations
+  origin_store        Store      @relation("OriginStore", fields: [origin_store_id], references: [id])
+  route_stops         RouteStop[]
+  deliveries          Delivery[]
+
+  @@index([route_status])
+  @@index([route_date])
+  @@index([origin_store_id])
+  @@map("routes")
+}
+
+// Route Stop Model (จุดแวะในเส้นทาง)
+model RouteStop {
+  id                  String   @id @default(uuid())
+  route_id            String
+  stop_order          Int      // 1, 2, 3, ...
+  order_id            String?  // optional: link to specific order
+
+  stop_type           String   // pickup, delivery, waypoint
+  address             String
+  latitude            Float
+  longitude           Float
+
+  estimated_arrival   DateTime?
+  actual_arrival      DateTime?
+  estimated_duration  Int?     // นาที
+  actual_duration     Int?
+
+  distance_from_prev  Float?   // km from previous stop
+  status              String   @default("pending") // pending, arrived, completed, skipped
+  notes               String?
+
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  // Relations
+  route               Route    @relation(fields: [route_id], references: [id], onDelete: Cascade)
+
+  @@index([route_id, stop_order])
+  @@index([status])
+  @@map("route_stops")
+}
+
+// ============================================
+// 6. REAL-TIME TRACKING & GPS
+// ============================================
+
+// GPS Tracking Model (~22M points/day)
+// Strategy: Partition by date, Archive old data
+model GPSTracking {
+  id                  String   @id @default(uuid())
+  driver_id           String
+  vehicle_id          String
+
+  latitude            Float
+  longitude           Float
+  altitude            Float?
+  accuracy            Float?   // meters
+  speed               Float?   // km/h
+  heading             Float?   // degrees 0-360
+
+  battery_level       Int?     // %
+  is_moving           Boolean  @default(false)
+
+  timestamp           DateTime @default(now())
+  recorded_date       DateTime @default(now()) // For partitioning
+
+  // Relations
+  driver              Driver   @relation(fields: [driver_id], references: [id])
+  vehicle             Vehicle  @relation(fields: [vehicle_id], references: [id])
+
+  @@index([driver_id, timestamp])
+  @@index([vehicle_id, timestamp])
+  @@index([recorded_date])
+  @@index([latitude, longitude])
+  @@map("gps_trackings")
+}
+
+// ============================================
+// 7. TRAFFIC & WEATHER DATA
+// ============================================
+
+// Traffic Data Model (Google Maps API - 2,500 requests/day)
+model TrafficData {
+  id                  String   @id @default(uuid())
+
+  // Location
+  start_latitude      Float
+  start_longitude     Float
+  end_latitude        Float
+  end_longitude       Float
+  route_polyline      String?  // Encoded polyline
+
+  // Traffic Info
+  traffic_condition   String   // light, moderate, heavy, very_heavy
+  travel_time_sec     Int      // Current travel time
+  static_time_sec     Int      // Travel time without traffic
+  delay_sec           Int      // Difference
+  traffic_speed_kmh   Float?
+
+  // Metadata
+  data_source         String   @default("google_maps") // google_maps, waze, historical
+  confidence_score    Float?   // 0-1
+  timestamp           DateTime @default(now())
+  expires_at          DateTime // Cache TTL
+
+  @@index([start_latitude, start_longitude])
+  @@index([timestamp])
+  @@index([traffic_condition])
+  @@map("traffic_data")
+}
+
+// Weather Data Model (กรมอุตุนิยมวิทยา - every 10-15 min)
+model WeatherData {
+  id                  String   @id @default(uuid())
+
+  // Location
+  station_id          String?
+  district            String?
+  city                String
+  latitude            Float?
+  longitude           Float?
+
+  // Weather Conditions
+  temperature         Float    // °C
+  humidity            Int      // %
+  rainfall            Float?   // mm
+  wind_speed          Float?   // km/h
+  condition           String   // sunny, cloudy, rain, heavy_rain, storm
+  visibility          Float?   // km
+
+  timestamp           DateTime @default(now())
+  forecast_date       DateTime?
+
+  @@index([city, timestamp])
+  @@index([condition])
+  @@map("weather_data")
+}
+
+// ============================================
+// 8. PRIORITY CALCULATION & ANALYTICS
+// ============================================
+
+// Priority Calculation Log (audit trail)
+model PriorityCalculationLog {
+  id                  String   @id @default(uuid())
+  order_id            String
+
+  // Input Data
+  input_data          Json     // Snapshot of order data
+
+  // Calculation Results
+  priority_score      Float
+  priority_class      String   // critical, high, medium, low
+  breakdown           Json     // Detailed factor scores
+
+  // Factor Scores
+  temperature_score   Float
+  expiration_score    Float
+  customer_score      Float
+  value_score         Float
+  time_window_score   Float
+  fragility_score     Float
+
+  // Metadata
+  config_used         String   @default("default")
+  calculated_at       DateTime @default(now())
+
+  // Relations
+  order               Order    @relation(fields: [order_id], references: [id])
+
+  @@index([order_id])
+  @@index([calculated_at])
+  @@map("priority_calculation_logs")
 }
 
 // Priority Configuration Model (for admin adjustments)
 model PriorityConfig {
   id                  String   @id @default(uuid())
   config_name         String   @unique
-  weights             Json     // Store weight configuration
-  is_active           Boolean  @default(true)
+  description         String?
+
+  // Weight Configuration (must sum to 1.0)
+  weight_temperature  Float    @default(0.30)
+  weight_expiration   Float    @default(0.25)
+  weight_customer     Float    @default(0.15)
+  weight_value        Float    @default(0.10)
+  weight_time_window  Float    @default(0.15)
+  weight_fragility    Float    @default(0.05)
+
+  // Threshold Configuration
+  thresholds          Json?    // { "critical": 75, "high": 60, "medium": 40 }
+
+  is_active           Boolean  @default(false)
+  created_by          String?
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
+
+  @@map("priority_configs")
 }
+
+// ============================================
+// 9. HISTORICAL DATA & ANALYTICS
+// ============================================
+
+// Delivery History (3 years - for ML training)
+model DeliveryHistory {
+  id                  String   @id @default(uuid())
+
+  // Basic Info
+  delivery_date       DateTime
+  day_of_week         Int      // 0-6
+  hour_of_day         Int      // 0-23
+
+  // Location
+  origin_latitude     Float
+  origin_longitude    Float
+  dest_latitude       Float
+  dest_longitude      Float
+  district            String?
+  city                String
+
+  // Delivery Details
+  distance_km         Float
+  duration_min        Int
+  order_count         Int
+  total_value         Float
+  priority_avg        Float?
+
+  // Conditions
+  traffic_condition   String   // light, moderate, heavy
+  weather_condition   String   // sunny, cloudy, rain
+  temperature         Float?
+
+  // Performance
+  on_time             Boolean
+  delay_minutes       Int?
+  success_rate        Float?
+
+  // Vehicle & Driver
+  vehicle_type        String
+  driver_rating       Float?
+
+  created_at          DateTime @default(now())
+
+  @@index([delivery_date])
+  @@index([district, city])
+  @@index([traffic_condition])
+  @@map("delivery_histories")
+}
+
+// Performance Metrics (Aggregated)
+model PerformanceMetric {
+  id                  String   @id @default(uuid())
+
+  metric_type         String   // daily, weekly, monthly, driver, vehicle, route
+  metric_date         DateTime
+  entity_id           String?  // driver_id, vehicle_id, route_id
+  entity_type         String?  // driver, vehicle, route
+
+  // Metrics
+  total_deliveries    Int      @default(0)
+  successful          Int      @default(0)
+  failed              Int      @default(0)
+  on_time             Int      @default(0)
+  delayed             Int      @default(0)
+
+  // Averages
+  avg_delay_min       Float?
+  avg_distance_km     Float?
+  avg_duration_min    Float?
+  avg_priority_score  Float?
+
+  // Totals
+  total_distance_km   Float?
+  total_revenue       Float?
+  total_fuel_used     Float?
+
+  created_at          DateTime @default(now())
+
+  @@index([metric_type, metric_date])
+  @@index([entity_type, entity_id])
+  @@map("performance_metrics")
+}
+
+// ============================================
+// 10. SYSTEM & CONFIGURATION
+// ============================================
+
+// System Logs (for debugging & audit)
+model SystemLog {
+  id                  String   @id @default(uuid())
+  log_level           String   // info, warning, error, critical
+  log_type            String   // api, calculation, delivery, system
+  message             String
+  details             Json?
+  user_id             String?
+  ip_address          String?
+  created_at          DateTime @default(now())
+
+  @@index([log_level])
+  @@index([log_type])
+  @@index([created_at])
+  @@map("system_logs")
+}
+
+// API Usage Tracking (for rate limiting)
+model APIUsage {
+  id                  String   @id @default(uuid())
+  api_name            String   // google_maps, weather_api
+  endpoint            String?
+  request_count       Int      @default(1)
+  response_time_ms    Int?
+  status_code         Int?
+  error_message       String?
+  cost_estimate       Float?   // estimated cost in THB
+  usage_date          DateTime @default(now())
+
+  @@index([api_name, usage_date])
+  @@map("api_usages")
+}
+
+// ============================================
+// NOTES & OPTIMIZATION STRATEGIES
+// ============================================
+
+// 1. PARTITIONING STRATEGY:
+//    - GPSTracking: Partition by recorded_date (monthly)
+//    - DeliveryHistory: Partition by delivery_date (yearly)
+//    - TrafficData: Partition by timestamp (weekly)
+
+// 2. ARCHIVAL STRATEGY:
+//    - GPS data older than 30 days → Move to cold storage (S3)
+//    - Traffic data older than 7 days → Archive
+//    - System logs older than 90 days → Archive
+
+// 3. CACHING STRATEGY:
+//    - Traffic data: 5-minute TTL in Redis
+//    - Weather data: 15-minute TTL
+//    - Store locations: 1-hour TTL
+//    - Product catalog: 1-hour TTL
+
+// 4. INDEX OPTIMIZATION:
+//    - Composite indexes on frequently queried combinations
+//    - Spatial indexes for lat/lng queries (PostGIS)
+//    - Partial indexes on active records only
+
+// 5. QUERY OPTIMIZATION:
+//    - Use connection pooling (PgBouncer)
+//    - Implement read replicas for analytics
+//    - Use materialized views for reporting
+
+// 6. DATA VOLUME HANDLING (5Vs):
+//    - Volume: ~10-25 GB/day → Partitioning + Archival
+//    - Velocity: GPS every 10-15s → Queue-based processing
+//    - Variety: Structured (80%), Semi-structured (20%)
+//    - Veracity: Validation rules + Outlier detection
+//    - Value: Priority calculation + Route optimization

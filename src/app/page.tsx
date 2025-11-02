@@ -6,9 +6,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calculator, Package, Truck, Clock, ThermometerSnowflake, AlertTriangle } from 'lucide-react';
+import { Calculator, Package, Truck, Clock, ThermometerSnowflake, AlertTriangle, RefreshCw, Menu } from 'lucide-react';
 import Link from 'next/link';
-import { Menu} from 'lucide-react';
 
 // ===================================
 // Types & Interfaces
@@ -17,227 +16,43 @@ import { Menu} from 'lucide-react';
 interface Product {
   product_id: string;
   name: string;
-  category: 'hot_food' | 'frozen' | 'chilled' | 'beverage' | 'snack' | 'daily_goods' | 'medicine';
+  category: string;
   price: number;
   quantity: number;
-  expiration_hours: number; // ชั่วโมงจนกว่าจะหมดอายุ
+  expiration_hours: number | null;
 }
 
 interface Order {
   order_id: string;
+  order_number?: string;
   customer_name: string;
   customer_address: string;
   delivery_latitude: number;
   delivery_longitude: number;
-  customer_priority: 'urgent' | 'high' | 'standard' | 'economy';
+  customer_priority: string;
+  order_status: string;
   order_time: string;
+  delivery_window_start?: string;
   delivery_window_end: string;
   products: Product[];
   // Calculated fields
-  priority_score?: number;
-  priority_class?: string;
+  priority_score: number;
+  priority_class: string;
   suggested_delivery_order?: number;
   highest_temp_requirement?: string;
-  total_value?: number;
+  total_value: number;
   earliest_expiration?: number;
+  minutes_until_deadline?: number;
+  breakdown?: {
+    temperature: number;
+    expiration: number;
+    customer: number;
+    value: number;
+    timeWindow: number;
+    fragility: number;
+  };
 }
 
-// ===================================
-// Priority Calculator (Realistic Version)
-// ===================================
-
-class OrderPriorityCalculator {
-  // Temperature categories based on product category
-  private tempRequirements = {
-    hot_food: { temp: 'hot', score: 100, label: 'ร้อน 60-70°C', icon: '🔥', color: 'red' },
-    frozen: { temp: 'frozen', score: 90, label: 'แช่แข็ง -18°C', icon: '❄️', color: 'blue' },
-    chilled: { temp: 'chilled', score: 75, label: 'เย็น 0-4°C', icon: '🧊', color: 'cyan' },
-    beverage: { temp: 'cool', score: 40, label: 'เย็น 15-20°C', icon: '🥤', color: 'green' },
-    snack: { temp: 'ambient', score: 20, label: 'ปกติ', icon: '🍪', color: 'gray' },
-    daily_goods: { temp: 'ambient', score: 20, label: 'ปกติ', icon: '📦', color: 'gray' },
-    medicine: { temp: 'ambient', score: 60, label: 'ปกติ (ยา)', icon: '💊', color: 'purple' }
-  };
-
-  private customerPriorityScores = {
-    urgent: 100,
-    high: 75,
-    standard: 50,
-    economy: 25
-  };
-
-  calculateOrderPriority(order: Order): Order {
-    const now = new Date(order.order_time);
-    
-    // 1. หา Temperature Requirement สูงสุดในออเดอร์
-    const tempScores = order.products.map(p => 
-      this.tempRequirements[p.category]?.score || 20
-    );
-    const maxTempScore = Math.max(...tempScores);
-    const highestTempProduct = order.products.find(p => 
-      this.tempRequirements[p.category]?.score === maxTempScore
-    );
-    const tempRequirement = this.tempRequirements[highestTempProduct?.category || 'snack'];
-
-    // 2. หาอายุสั้นที่สุด (Earliest Expiration)
-    const expirations = order.products.map(p => p.expiration_hours);
-    const minExpiration = Math.min(...expirations);
-    const expirationScore = this.scoreExpiration(minExpiration);
-
-    // 3. Customer Priority
-    const customerScore = this.customerPriorityScores[order.customer_priority] || 50;
-
-    // 4. Total Order Value
-    const totalValue = order.products.reduce((sum, p) => sum + (p.price * p.quantity), 0);
-    const valueScore = this.scoreValue(totalValue);
-
-    // 5. Delivery Window Urgency
-    const deliveryEnd = new Date(order.delivery_window_end);
-    const minutesRemaining = (deliveryEnd.getTime() - now.getTime()) / (1000 * 60);
-    const windowScore = this.scoreDeliveryWindow(minutesRemaining);
-
-    // 6. Fragility (Medicine = fragile)
-    const hasMedicine = order.products.some(p => p.category === 'medicine');
-    const fragilityScore = hasMedicine ? 100 : 30;
-
-    // Calculate weighted score
-    const weights = {
-      temperature: 0.30,      // เพิ่มน้ำหนักเพราะสำคัญที่สุด
-      expiration: 0.25,       // เพิ่มเพราะเกี่ยวกับของเสีย
-      customer_priority: 0.15,
-      value: 0.10,
-      delivery_window: 0.15,
-      fragility: 0.05
-    };
-
-    const totalScore = 
-      (maxTempScore * weights.temperature) +
-      (expirationScore * weights.expiration) +
-      (customerScore * weights.customer_priority) +
-      (valueScore * weights.value) +
-      (windowScore * weights.delivery_window) +
-      (fragilityScore * weights.fragility);
-
-    // Classify priority
-    const priorityClass = this.classifyPriority(totalScore);
-
-    return {
-      ...order,
-      priority_score: Math.round(totalScore * 100) / 100,
-      priority_class: priorityClass,
-      highest_temp_requirement: tempRequirement.label,
-      total_value: totalValue,
-      earliest_expiration: minExpiration
-    };
-  }
-
-  private scoreExpiration(hours: number): number {
-    if (hours <= 3) return 100;  // อาหารร้อน
-    if (hours <= 8) return 90;   // แซนด์วิช
-    if (hours <= 24) return 70;
-    if (hours <= 168) return 50; // 1 สัปดาห์
-    return 30;
-  }
-
-  private scoreValue(value: number): number {
-    if (value >= 500) return 100;
-    if (value >= 200) return 80;
-    if (value >= 100) return 60;
-    if (value >= 50) return 40;
-    return 20;
-  }
-
-  private scoreDeliveryWindow(minutes: number): number {
-    if (minutes <= 15) return 100;
-    if (minutes <= 30) return 90;
-    if (minutes <= 60) return 70;
-    if (minutes <= 120) return 50;
-    return 30;
-  }
-
-  private classifyPriority(score: number): string {
-    if (score >= 75) return 'critical';
-    if (score >= 60) return 'high';
-    if (score >= 40) return 'medium';
-    return 'low';
-  }
-}
-
-// ===================================
-// Mock Data
-// ===================================
-
-const mockOrders: Order[] = [
-  {
-    order_id: 'ORD001',
-    customer_name: 'คุณสมชาย ใจดี',
-    customer_address: 'หอพัก Eton ชั้น 5 ห้อง 501',
-    delivery_latitude: 13.9660,
-    delivery_longitude: 100.5970,
-    customer_priority: 'urgent',
-    order_time: new Date().toISOString(),
-    delivery_window_end: new Date(Date.now() + 25 * 60000).toISOString(),
-    products: [
-      { product_id: 'P001', name: 'ข้าวกล่องหมูกระเพรา', category: 'hot_food', price: 65, quantity: 1, expiration_hours: 3 },
-      { product_id: 'P002', name: 'น้ำดื่ม', category: 'beverage', price: 10, quantity: 2, expiration_hours: 8760 }
-    ]
-  },
-  {
-    order_id: 'ORD002',
-    customer_name: 'คุณสมหญิง รักสวย',
-    customer_address: 'หอพักลุมพินี ตึก A ชั้น 3',
-    delivery_latitude: 13.9680,
-    delivery_longitude: 100.5980,
-    customer_priority: 'urgent',
-    order_time: new Date().toISOString(),
-    delivery_window_end: new Date(Date.now() + 30 * 60000).toISOString(),
-    products: [
-      { product_id: 'P003', name: 'ไอศกรีมวานิลลา', category: 'frozen', price: 89, quantity: 2, expiration_hours: 720 },
-      { product_id: 'P004', name: 'โค้ก', category: 'beverage', price: 20, quantity: 1, expiration_hours: 8760 }
-    ]
-  },
-  {
-    order_id: 'ORD003',
-    customer_name: 'คุณวิชัย มั่งคั่ง',
-    customer_address: 'อาคารศูนย์รังสิต มธ. อาคาร SC ห้อง 210',
-    delivery_latitude: 13.9640,
-    delivery_longitude: 100.5960,
-    customer_priority: 'high',
-    order_time: new Date().toISOString(),
-    delivery_window_end: new Date(Date.now() + 45 * 60000).toISOString(),
-    products: [
-      { product_id: 'P005', name: 'แซนด์วิชไข่ทูน่า', category: 'chilled', price: 45, quantity: 2, expiration_hours: 8 },
-      { product_id: 'P006', name: 'กาแฟเย็น', category: 'beverage', price: 40, quantity: 1, expiration_hours: 24 }
-    ]
-  },
-  {
-    order_id: 'ORD004',
-    customer_name: 'คุณนิดา สุขสันต์',
-    customer_address: 'โรงพยาบาลธรรมศาสตร์ ตึกผู้ป่วยนอก',
-    delivery_latitude: 13.9700,
-    delivery_longitude: 100.5930,
-    customer_priority: 'high',
-    order_time: new Date().toISOString(),
-    delivery_window_end: new Date(Date.now() + 60 * 60000).toISOString(),
-    products: [
-      { product_id: 'P007', name: 'ยาพาราเซตามอล', category: 'medicine', price: 120, quantity: 1, expiration_hours: 17520 },
-      { product_id: 'P008', name: 'น้ำเกลือแร่', category: 'beverage', price: 15, quantity: 3, expiration_hours: 8760 }
-    ]
-  },
-  {
-    order_id: 'ORD005',
-    customer_name: 'คุณประยุทธ อยู่เย็น',
-    customer_address: 'ตลาดรังสิต ร้านค้าเลขที่ 42',
-    delivery_latitude: 13.9620,
-    delivery_longitude: 100.5920,
-    customer_priority: 'standard',
-    order_time: new Date().toISOString(),
-    delivery_window_end: new Date(Date.now() + 120 * 60000).toISOString(),
-    products: [
-      { product_id: 'P009', name: 'มาม่า', category: 'snack', price: 25, quantity: 5, expiration_hours: 4380 },
-      { product_id: 'P010', name: 'น้ำดื่ม 6 ขวด', category: 'beverage', price: 60, quantity: 1, expiration_hours: 8760 }
-    ]
-  }
-];
 
 // ===================================
 // Main Component
@@ -245,28 +60,51 @@ const mockOrders: Order[] = [
 
 export default function DeliveryPriorityDashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [sortedOrders, setSortedOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState({
+    total: 0,
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    total_value: 0,
+    avg_score: 0,
+  });
 
+  // Fetch orders from API
+  const fetchOrders = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch('/api/orders?status=pending&limit=50');
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to fetch orders');
+      }
+
+      if (result.success) {
+        setOrders(result.data);
+        setSummary(result.summary);
+      } else {
+        throw new Error(result.error || 'Unknown error');
+      }
+    } catch (err) {
+      console.error('Error fetching orders:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch orders');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial fetch
   useEffect(() => {
-    // Calculate priority for all orders
-    const calculator = new OrderPriorityCalculator();
-    const calculated = mockOrders.map(order => calculator.calculateOrderPriority(order));
-    
-    // Sort by priority score
-    const sorted = [...calculated].sort((a, b) => 
-      (b.priority_score || 0) - (a.priority_score || 0)
-    );
-    
-    // Add suggested delivery order
-    sorted.forEach((order, index) => {
-      order.suggested_delivery_order = index + 1;
-    });
-    
-    setOrders(calculated);
-    setSortedOrders(sorted);
+    fetchOrders();
   }, []);
 
   // Update current time every minute
@@ -274,6 +112,14 @@ export default function DeliveryPriorityDashboard() {
     const interval = setInterval(() => {
       setCurrentTime(new Date());
     }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchOrders();
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -299,19 +145,12 @@ export default function DeliveryPriorityDashboard() {
     const end = new Date(deliveryEnd);
     const diff = end.getTime() - currentTime.getTime();
     const minutes = Math.floor(diff / 60000);
-    
+
     if (minutes <= 0) return { text: 'เลยเวลา!', urgent: true };
     if (minutes <= 15) return { text: `${minutes} นาที`, urgent: true };
     if (minutes <= 60) return { text: `${minutes} นาที`, urgent: false };
     const hours = Math.floor(minutes / 60);
     return { text: `${hours} ชม. ${minutes % 60} นาที`, urgent: false };
-  };
-
-  const summary = {
-    total: orders.length,
-    critical: orders.filter(o => o.priority_class === 'critical').length,
-    high: orders.filter(o => o.priority_class === 'high').length,
-    totalValue: orders.reduce((sum, o) => sum + (o.total_value || 0), 0)
   };
 
   return (
@@ -379,82 +218,134 @@ export default function DeliveryPriorityDashboard() {
       </header>
 
       <div className="container mx-auto px-4 py-6">
+        {/* Loading State */}
+        {loading && orders.length === 0 && (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <RefreshCw className="w-16 h-16 text-seven-green animate-spin mx-auto mb-4" />
+              <p className="text-gray-600 text-lg">กำลังโหลดข้อมูล...</p>
+            </div>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && (
+          <div className="bg-red-50 border-l-4 border-red-500 rounded-xl p-5 mb-6">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-6 h-6 text-red-500 flex-shrink-0 mt-1" />
+              <div>
+                <h3 className="font-bold text-red-800 mb-1">เกิดข้อผิดพลาด</h3>
+                <p className="text-red-700 text-sm">{error}</p>
+                <button
+                  onClick={fetchOrders}
+                  className="mt-3 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
+                >
+                  ลองอีกครั้ง
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-seven-green">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm font-semibold">ออเดอร์ทั้งหมด</p>
-                <p className="text-3xl font-bold text-seven-green">{summary.total}</p>
+        {!loading && !error && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-seven-green">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 text-sm font-semibold">ออเดอร์ทั้งหมด</p>
+                    <p className="text-3xl font-bold text-seven-green">{summary.total}</p>
+                  </div>
+                  <div className="bg-seven-green/10 p-3 rounded-lg">
+                    <Package className="w-10 h-10 text-seven-green" />
+                  </div>
+                </div>
               </div>
-              <div className="bg-seven-green/10 p-3 rounded-lg">
-                <Package className="w-10 h-10 text-seven-green" />
-              </div>
-            </div>
-          </div>
 
-          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-seven-red">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm font-semibold">🔴 เร่งด่วนมาก</p>
-                <p className="text-3xl font-bold text-seven-red">{summary.critical}</p>
+              <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-seven-red">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 text-sm font-semibold">🔴 เร่งด่วนมาก</p>
+                    <p className="text-3xl font-bold text-seven-red">{summary.critical}</p>
+                  </div>
+                  <div className="bg-red-50 p-3 rounded-lg">
+                    <AlertTriangle className="w-10 h-10 text-seven-red" />
+                  </div>
+                </div>
               </div>
-              <div className="bg-red-50 p-3 rounded-lg">
-                <AlertTriangle className="w-10 h-10 text-seven-red" />
-              </div>
-            </div>
-          </div>
 
-          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-seven-orange">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm font-semibold">🟠 เร่งด่วน</p>
-                <p className="text-3xl font-bold text-seven-orange">{summary.high}</p>
+              <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-seven-orange">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 text-sm font-semibold">🟠 เร่งด่วน</p>
+                    <p className="text-3xl font-bold text-seven-orange">{summary.high}</p>
+                  </div>
+                  <div className="bg-orange-50 p-3 rounded-lg">
+                    <Clock className="w-10 h-10 text-seven-orange" />
+                  </div>
+                </div>
               </div>
-              <div className="bg-orange-50 p-3 rounded-lg">
-                <Clock className="w-10 h-10 text-seven-orange" />
-              </div>
-            </div>
-          </div>
 
-          <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-seven-green">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm font-semibold">มูลค่ารวม</p>
-                <p className="text-3xl font-bold text-seven-green">฿{summary.totalValue}</p>
-              </div>
-              <div className="bg-seven-green/10 p-3 rounded-lg">
-                <Calculator className="w-10 h-10 text-seven-green" />
+              <div className="bg-white rounded-xl shadow-md p-6 border-t-4 border-seven-green">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 text-sm font-semibold">มูลค่ารวม</p>
+                    <p className="text-3xl font-bold text-seven-green">
+                      ฿{summary.total_value.toLocaleString('th-TH')}
+                    </p>
+                  </div>
+                  <div className="bg-seven-green/10 p-3 rounded-lg">
+                    <Calculator className="w-10 h-10 text-seven-green" />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
+          </>
+        )}
 
         {/* Instructions */}
-        <div className="bg-gradient-to-r from-seven-green/10 to-green-50 border-l-4 border-seven-green rounded-xl p-5 mb-6 shadow-sm">
-          <div className="flex items-start gap-3">
-            <div className="bg-seven-green p-2 rounded-lg">
-              <Truck className="w-6 h-6 text-white flex-shrink-0" />
+        {!loading && !error && orders.length > 0 && (
+          <>
+            <div className="bg-gradient-to-r from-seven-green/10 to-green-50 border-l-4 border-seven-green rounded-xl p-5 mb-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="bg-seven-green p-2 rounded-lg">
+                  <Truck className="w-6 h-6 text-white flex-shrink-0" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-seven-green-dark mb-2 text-lg">
+                    💡 คำแนะนำสำหรับพนักงานขับรถ
+                  </h3>
+                  <p className="text-gray-700 text-sm leading-relaxed">
+                    ระบบแสดง<strong className="text-seven-green">ลำดับแนะนำ</strong>
+                    การจัดส่ง โดยพิจารณาจาก: อุณหภูมิที่ต้องการ, อายุสินค้า,
+                    ความเร่งด่วน, และเวลาส่ง
+                    <br />
+                    <span className="text-seven-orange font-semibold">⚠️ หมายเหตุ:</span>{' '}
+                    ระบบเป็นเพียงคำแนะนำ คุณสามารถปรับเปลี่ยนตามสถานการณ์จริงได้
+                  </p>
+                </div>
+              </div>
             </div>
-            <div>
-              <h3 className="font-bold text-seven-green-dark mb-2 text-lg">💡 คำแนะนำสำหรับพนักงานขับรถ</h3>
-              <p className="text-gray-700 text-sm leading-relaxed">
-                ระบบแสดง<strong className="text-seven-green">ลำดับแนะนำ</strong>การจัดส่ง โดยพิจารณาจาก: อุณหภูมิที่ต้องการ, อายุสินค้า, ความเร่งด่วน, และเวลาส่ง
-                <br/>
-                <span className="text-seven-orange font-semibold">⚠️ หมายเหตุ:</span> ระบบเป็นเพียงคำแนะนำ คุณสามารถปรับเปลี่ยนตามสถานการณ์จริงได้
-              </p>
-            </div>
-          </div>
-        </div>
 
-        {/* Orders List */}
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
-          <div className="bg-gradient-to-r from-seven-green to-seven-green-dark px-6 py-4">
-            <h2 className="text-xl font-bold text-white">📦 รายการออเดอร์ (เรียงตามความสำคัญ)</h2>
-          </div>
+            {/* Orders List */}
+            <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
+              <div className="bg-gradient-to-r from-seven-green to-seven-green-dark px-6 py-4 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-white">
+                  📦 รายการออเดอร์ (เรียงตามความสำคัญ)
+                </h2>
+                <button
+                  onClick={fetchOrders}
+                  className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors text-white text-sm font-medium"
+                  disabled={loading}
+                >
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  รีเฟรช
+                </button>
+              </div>
 
-          <div className="divide-y">
-            {sortedOrders.map((order) => {
+              <div className="divide-y">
+                {orders.map((order) => {
               const timeRemaining = getTimeRemaining(order.delivery_window_end);
               
               return (
@@ -553,6 +444,25 @@ export default function DeliveryPriorityDashboard() {
             })}
           </div>
         </div>
+          </>
+        )}
+
+        {/* Empty State */}
+        {!loading && !error && orders.length === 0 && (
+          <div className="bg-white rounded-xl shadow-lg p-12 text-center">
+            <Package className="w-24 h-24 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-xl font-bold text-gray-700 mb-2">ไม่มีออเดอร์ในขณะนี้</h3>
+            <p className="text-gray-500 mb-6">
+              ไม่พบออเดอร์ที่รอการจัดส่ง โปรดตรวจสอบอีกครั้งในภายหลัง
+            </p>
+            <button
+              onClick={fetchOrders}
+              className="px-6 py-3 bg-seven-green hover:bg-seven-green-dark text-white rounded-lg transition-colors font-medium"
+            >
+              รีเฟรชข้อมูล
+            </button>
+          </div>
+        )}
 
         {/* Modal for Order Details */}
         {selectedOrder && (
