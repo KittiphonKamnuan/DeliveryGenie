@@ -3,8 +3,8 @@
 // ===================================
 
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
 import {
-  prisma,
   calculatePriorityScore,
   calculateMinutesUntilDeadline,
   calculateHoursUntilExpiry,
@@ -19,15 +19,15 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50');
 
     // Fetch orders from database with related data
-    const orders = await prisma.order.findMany({
+    const orders = await prisma.orders.findMany({
       where: {
         order_status: status,
       },
       include: {
-        customer: true,
+        customers: true,
         order_items: {
           include: {
-            product: true,
+            products: true,
           },
         },
       },
@@ -40,15 +40,15 @@ export async function GET(request: NextRequest) {
     // Calculate priority for each order
     const ordersWithPriority = orders.map((order) => {
       // Get all product categories
-      const categories = order.order_items.map((item) => item.product.category);
+      const categories = order.order_items.map((item) => item.products.category);
       const highestTempCategory = getHighestTemperatureRequirement(categories);
 
       // Calculate earliest expiration
       const expirationHours = order.order_items.map((item) => {
-        if (item.product.expiration_date) {
-          return calculateHoursUntilExpiry(item.product.expiration_date);
+        if (item.expiration_datetime) {
+          return calculateHoursUntilExpiry(item.expiration_datetime);
         }
-        return 8760; // Default 1 year
+        return item.products.typical_expiration_hours || 8760; // Use product's typical expiration or default 1 year
       });
       const minExpiration = Math.min(...expirationHours);
 
@@ -66,14 +66,14 @@ export async function GET(request: NextRequest) {
       // Check if order contains fragile items
       const isFragile = order.order_items.some(
         (item) =>
-          item.product.category === 'medicine' || item.product.is_fragile
+          item.products.category === 'medicine' || item.products.is_fragile
       );
 
       // Calculate priority
       const priorityResult = calculatePriorityScore({
         temperatureCategory: highestTempCategory,
         expirationHours: minExpiration,
-        customerPriority: order.customer.priority_level || 'standard',
+        customerPriority: order.customers.priority_level || 'standard',
         orderValue: totalValue,
         minutesUntilDeadline,
         isFragile,
@@ -82,17 +82,17 @@ export async function GET(request: NextRequest) {
       return {
         order_id: order.id,
         order_number: order.order_number,
-        customer_name: order.customer.name,
-        customer_address: `${order.customer.address_line1}${
-          order.customer.address_line2 ? ', ' + order.customer.address_line2 : ''
+        customer_name: order.customers.name,
+        customer_address: `${order.customers.address_line1}${
+          order.customers.address_line2 ? ', ' + order.customers.address_line2 : ''
         }`,
-        customer_priority: order.customer.priority_level || 'standard',
+        customer_priority: order.customers.priority_level || 'standard',
         order_status: order.order_status,
         order_time: order.created_at,
         delivery_window_start: order.delivery_window_start,
         delivery_window_end: order.delivery_window_end,
-        delivery_latitude: order.customer.latitude,
-        delivery_longitude: order.customer.longitude,
+        delivery_latitude: order.customers.latitude,
+        delivery_longitude: order.customers.longitude,
         priority_score: priorityResult.score,
         priority_class: priorityResult.class,
         breakdown: priorityResult.breakdown,
@@ -101,13 +101,13 @@ export async function GET(request: NextRequest) {
         minutes_until_deadline: minutesUntilDeadline,
         highest_temp_requirement: highestTempCategory,
         products: order.order_items.map((item) => ({
-          product_id: item.product.id,
-          name: item.product.name,
-          category: item.product.category,
+          product_id: item.products.id,
+          name: item.products.name,
+          category: item.products.category,
           price: item.unit_price,
           quantity: item.quantity,
-          expiration_hours: item.product.expiration_date
-            ? calculateHoursUntilExpiry(item.product.expiration_date)
+          expiration_hours: item.expiration_datetime
+            ? calculateHoursUntilExpiry(item.expiration_datetime)
             : null,
         })),
       };
@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
 
     // Add suggested delivery order
     sorted.forEach((order, index) => {
-      (order as any).suggested_delivery_order = index + 1;
+      (order as typeof order & { suggested_delivery_order: number }).suggested_delivery_order = index + 1;
     });
 
     // Calculate summary

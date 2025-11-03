@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Menu, TrendingUp, Award, Fuel, Clock, Package, Target, Zap, Trophy, Star } from 'lucide-react';
-import Link from 'next/link';
+import { useState, useEffect } from 'react';
+import { TrendingUp, Award, Fuel, Clock, Package, Target, Zap, Trophy, Star } from 'lucide-react';
+import { Navigation } from '@/components';
 
 
 // ===================================
@@ -27,91 +27,18 @@ interface DriverPerformance {
 }
 
 // ===================================
-// Mock Data
+// API Data Fetching
 // ===================================
 
-const mockDrivers: DriverPerformance[] = [
-  {
-    driver_id: 'D001',
-    name: 'หนุ่ม น้อย',
-    rank: 1,
-    total_deliveries: 248,
-    on_time_deliveries: 235,
-    on_time_rate: 94.8,
-    avg_delivery_time: 18,
-    fuel_efficiency: 32.5,
-    total_distance: 1250,
-    customer_rating: 4.9,
-    earnings: 24800,
-    badge: '🏆 Top Performer',
-    trend: 'up',
-    weekly_deliveries: [32, 38, 42, 45, 48, 43, 50]
-  },
-  {
-    driver_id: 'D002',
-    name: 'มิว อินโทรเวิร์ต',
-    rank: 2,
-    total_deliveries: 232,
-    on_time_deliveries: 218,
-    on_time_rate: 94.1,
-    avg_delivery_time: 19,
-    fuel_efficiency: 31.8,
-    total_distance: 1180,
-    customer_rating: 4.8,
-    earnings: 23200,
-    badge: '⭐ Excellent',
-    trend: 'up',
-    weekly_deliveries: [30, 35, 38, 40, 42, 39, 38]
-  },
-  {
-    driver_id: 'D003',
-    name: 'บอมบ์ มั่งคั่ง',
-    rank: 3,
-    total_deliveries: 215,
-    on_time_deliveries: 198,
-    on_time_rate: 92.1,
-    avg_delivery_time: 20,
-    fuel_efficiency: 30.2,
-    total_distance: 1100,
-    customer_rating: 4.7,
-    earnings: 21500,
-    badge: '💚 Great',
-    trend: 'stable',
-    weekly_deliveries: [28, 32, 30, 35, 33, 31, 26]
-  },
-  {
-    driver_id: 'D004',
-    name: 'แฮม ร่ำรวย',
-    rank: 4,
-    total_deliveries: 198,
-    on_time_deliveries: 178,
-    on_time_rate: 89.9,
-    avg_delivery_time: 22,
-    fuel_efficiency: 29.5,
-    total_distance: 1020,
-    customer_rating: 4.6,
-    earnings: 19800,
-    badge: '✅ Good',
-    trend: 'down',
-    weekly_deliveries: [35, 33, 30, 28, 26, 24, 22]
-  },
-  {
-    driver_id: 'D005',
-    name: 'บิท หมด',
-    rank: 5,
-    total_deliveries: 185,
-    on_time_deliveries: 162,
-    on_time_rate: 87.6,
-    avg_delivery_time: 23,
-    fuel_efficiency: 28.8,
-    total_distance: 950,
-    customer_rating: 4.5,
-    earnings: 18500,
-    badge: '📦 Active',
-    trend: 'stable',
-    weekly_deliveries: [25, 28, 27, 26, 28, 27, 24]
-  }
-];
+interface DriverPerformanceData {
+  drivers: DriverPerformance[];
+  overallStats: {
+    totalDrivers: number;
+    avgOnTimeRate: string;
+    avgFuelEfficiency: string;
+    totalDeliveries: number;
+  };
+}
 
 // ===================================
 // Main Component
@@ -119,15 +46,51 @@ const mockDrivers: DriverPerformance[] = [
 
 export default function DriverPerformance() {
   const [selectedDriver, setSelectedDriver] = useState<DriverPerformance | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
-  
-  const overallStats = {
-    totalDrivers: mockDrivers.length,
-    avgOnTimeRate: (mockDrivers.reduce((sum, d) => sum + d.on_time_rate, 0) / mockDrivers.length).toFixed(1),
-    avgFuelEfficiency: (mockDrivers.reduce((sum, d) => sum + d.fuel_efficiency, 0) / mockDrivers.length).toFixed(1),
-    totalDeliveries: mockDrivers.reduce((sum, d) => sum + d.total_deliveries, 0)
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [drivers, setDrivers] = useState<DriverPerformance[]>([]);
+  const [overallStats, setOverallStats] = useState({
+    totalDrivers: 0,
+    avgOnTimeRate: '0.0',
+    avgFuelEfficiency: '0.0',
+    totalDeliveries: 0
+  });
+
+  // Fetch driver performance data
+  const fetchDriverPerformance = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch('/api/drivers/performance');
+      const result = await response.json();
+
+      if (result.success) {
+        setDrivers(result.drivers);
+        setOverallStats(result.overallStats);
+      } else {
+        setError(result.error || 'Failed to fetch driver performance');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch driver performance');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // Fetch on mount
+  useEffect(() => {
+    fetchDriverPerformance();
+  }, []);
+
+  // Update time
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const getRankColor = (rank: number) => {
     if (rank === 1) return 'bg-gradient-to-br from-yellow-400 to-yellow-600';
@@ -166,44 +129,9 @@ export default function DriverPerformance() {
                 <p className="text-green-50">แดชบอร์ดประสิทธิภาพคนขับรถ</p>
               </div>
             </div>
-            
-    <div className="relative">
-      {/* Hamburger Button */}
-      <button
-        className="flex items-center justify-center p-2 bg-seven-green rounded-lg shadow-lg fixed top-4 left-4 z-50"
-        onClick={() => setMenuOpen(!menuOpen)}
-      >
-        <Menu className="w-6 h-6 text-white" />
-      </button>
 
-      {/* Dropdown Menu */}
-      {menuOpen && (
-        <div className="fixed top-16 left-4 w-48 bg-white text-gray-800 rounded-lg shadow-lg z-50">
-          <Link
-            href="/"
-            className="block px-4 py-2 hover:bg-gray-100"
-            onClick={() => setMenuOpen(false)}
-          >
-            🌟 Priority System
-          </Link>
-          <Link
-            href="/driver-performance"
-            className="block px-4 py-2 hover:bg-gray-100"
-            onClick={() => setMenuOpen(false)}
-          >
-            🚚 Driver Performance
-          </Link>
-          <Link 
-            href="/analytics"
-            className="block px-4 py-2 hover:bg-gray-100"
-            onClick={() => setMenuOpen(false)}
-          >
-            📊 Real-time Analytics
-          </Link>
-        </div>
-      )}
-    </div>
-  
+            <Navigation />
+
             <div className="text-right bg-white/10 px-6 py-3 rounded-lg backdrop-blur-sm">
               <div className="text-sm text-green-50">เวลาปัจจุบัน</div>
               <div className="text-2xl font-bold">
@@ -258,7 +186,7 @@ export default function DriverPerformance() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-500 text-sm font-semibold">Top Performer</p>
-                <p className="text-xl font-bold text-purple-600">{mockDrivers[0].name}</p>
+                <p className="text-xl font-bold text-purple-600">{drivers.length > 0 ? drivers[0].name : 'N/A'}</p>
               </div>
               <div className="bg-purple-50 p-3 rounded-lg">
                 <Trophy className="w-10 h-10 text-purple-600" />
@@ -274,7 +202,7 @@ export default function DriverPerformance() {
           </div>
 
           <div className="divide-y">
-            {mockDrivers.map((driver) => (
+            {drivers.map((driver) => (
               <div
                 key={driver.driver_id}
                 className="p-6 hover:bg-gray-50 cursor-pointer transition-colors"

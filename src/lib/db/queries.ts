@@ -3,14 +3,15 @@
 // Database Queries
 // ===================================
 
-import { prisma } from './prisma';
+import { prisma } from '../db';
+import type { Prisma } from '@prisma/client';
 
 // ===================================
 // Order Queries
 // ===================================
 
 export async function getPendingOrders() {
-  return await prisma.order.findMany({
+  return await prisma.orders.findMany({
     where: {
       order_status: 'pending',
       delivery_date: {
@@ -18,10 +19,10 @@ export async function getPendingOrders() {
       }
     },
     include: {
-      customer: true,
+      customers: true,
       order_items: {
         include: {
-          product: true
+          products: true
         }
       }
     },
@@ -32,19 +33,19 @@ export async function getPendingOrders() {
 }
 
 export async function getOrderById(orderId: string) {
-  return await prisma.order.findUnique({
+  return await prisma.orders.findUnique({
     where: { id: orderId },
     include: {
-      customer: true,
+      customers: true,
       order_items: {
         include: {
-          product: true
+          products: true
         }
       },
       deliveries: {
         include: {
-          driver: true,
-          vehicle: true
+          drivers: true,
+          vehicles: true
         }
       }
     }
@@ -52,7 +53,7 @@ export async function getOrderById(orderId: string) {
 }
 
 export async function getOrdersByDeliveryDate(deliveryDate: Date) {
-  return await prisma.order.findMany({
+  return await prisma.orders.findMany({
     where: {
       delivery_date: deliveryDate,
       order_status: {
@@ -60,10 +61,10 @@ export async function getOrdersByDeliveryDate(deliveryDate: Date) {
       }
     },
     include: {
-      customer: true,
+      customers: true,
       order_items: {
         include: {
-          product: true
+          products: true
         }
       }
     },
@@ -78,9 +79,9 @@ export async function updateOrderPriority(
   orderId: string,
   priorityScore: number,
   priorityClass: string,
-  priorityBreakdown: any
+  priorityBreakdown: Prisma.InputJsonValue
 ) {
-  return await prisma.order.update({
+  return await prisma.orders.update({
     where: { id: orderId },
     data: {
       priority_score: priorityScore,
@@ -91,7 +92,7 @@ export async function updateOrderPriority(
 }
 
 export async function updateOrderStatus(orderId: string, status: string) {
-  return await prisma.order.update({
+  return await prisma.orders.update({
     where: { id: orderId },
     data: {
       order_status: status,
@@ -105,7 +106,7 @@ export async function updateOrderStatus(orderId: string, status: string) {
 // ===================================
 
 export async function getCustomerByPhone(phone: string) {
-  return await prisma.customer.findUnique({
+  return await prisma.customers.findUnique({
     where: { phone },
     include: {
       orders: {
@@ -131,7 +132,7 @@ export async function createCustomer(data: {
   longitude: number;
   delivery_notes?: string;
 }) {
-  return await prisma.customer.create({
+  return await prisma.customers.create({
     data
   });
 }
@@ -141,7 +142,7 @@ export async function createCustomer(data: {
 // ===================================
 
 export async function getActiveProducts() {
-  return await prisma.product.findMany({
+  return await prisma.products.findMany({
     where: {
       is_active: true
     },
@@ -152,7 +153,7 @@ export async function getActiveProducts() {
 }
 
 export async function getProductsByCategory(category: string) {
-  return await prisma.product.findMany({
+  return await prisma.products.findMany({
     where: {
       category,
       is_active: true
@@ -168,7 +169,7 @@ export async function getProductsByCategory(category: string) {
 // ===================================
 
 export async function getAvailableDrivers() {
-  return await prisma.driver.findMany({
+  return await prisma.drivers.findMany({
     where: {
       status: 'active'
     },
@@ -179,7 +180,7 @@ export async function getAvailableDrivers() {
 }
 
 export async function getAvailableVehicles() {
-  return await prisma.vehicle.findMany({
+  return await prisma.vehicles.findMany({
     where: {
       current_status: 'available'
     },
@@ -199,24 +200,31 @@ export async function createDelivery(data: {
   vehicle_id: string;
   planned_arrival?: Date;
 }) {
-  return await prisma.delivery.create({
+  // Generate unique delivery number
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const randomNum = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  const deliveryNumber = `DEL-${dateStr}-${randomNum}`;
+
+  return await prisma.deliveries.create({
     data: {
       ...data,
+      delivery_number: deliveryNumber,
       delivery_status: 'pending'
     },
     include: {
-      order: {
+      orders: {
         include: {
-          customer: true,
+          customers: true,
           order_items: {
             include: {
-              product: true
+              products: true
             }
           }
         }
       },
-      driver: true,
-      vehicle: true
+      drivers: true,
+      vehicles: true
     }
   });
 }
@@ -230,7 +238,7 @@ export async function updateDeliveryStatus(
     actual_arrival?: Date;
   }
 ) {
-  return await prisma.delivery.update({
+  return await prisma.deliveries.update({
     where: { id: deliveryId },
     data: {
       delivery_status: status,
@@ -240,7 +248,13 @@ export async function updateDeliveryStatus(
 }
 
 export async function getDeliveriesByDriver(driverId: string, date?: Date) {
-  const whereClause: any = {
+  const whereClause: {
+    driver_id: string;
+    created_at?: {
+      gte: Date;
+      lt: Date;
+    };
+  } = {
     driver_id: driverId
   };
 
@@ -251,20 +265,20 @@ export async function getDeliveriesByDriver(driverId: string, date?: Date) {
     };
   }
 
-  return await prisma.delivery.findMany({
+  return await prisma.deliveries.findMany({
     where: whereClause,
     include: {
-      order: {
+      orders: {
         include: {
-          customer: true,
+          customers: true,
           order_items: {
             include: {
-              product: true
+              products: true
             }
           }
         }
       },
-      vehicle: true
+      vehicles: true
     },
     orderBy: {
       created_at: 'desc'
@@ -277,7 +291,7 @@ export async function getDeliveriesByDriver(driverId: string, date?: Date) {
 // ===================================
 
 export async function getOrderStatistics(startDate: Date, endDate: Date) {
-  const orders = await prisma.order.findMany({
+  const orders = await prisma.orders.findMany({
     where: {
       created_at: {
         gte: startDate,
@@ -296,16 +310,16 @@ export async function getOrderStatistics(startDate: Date, endDate: Date) {
     }, 0);
   }, 0);
 
-  const ordersByStatus = orders.reduce((acc: any, order) => {
+  const ordersByStatus = orders.reduce((acc: Record<string, number>, order) => {
     acc[order.order_status] = (acc[order.order_status] || 0) + 1;
     return acc;
-  }, {});
+  }, {} as Record<string, number>);
 
-  const ordersByPriority = orders.reduce((acc: any, order) => {
+  const ordersByPriority = orders.reduce((acc: Record<string, number>, order) => {
     const priority = order.priority_class || 'unknown';
     acc[priority] = (acc[priority] || 0) + 1;
     return acc;
-  }, {});
+  }, {} as Record<string, number>);
 
   return {
     totalOrders,

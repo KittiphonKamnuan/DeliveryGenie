@@ -4,6 +4,7 @@
 // ===================================
 
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -11,7 +12,41 @@ async function main() {
   console.log('🌱 Starting database seeding...\n');
 
   // ============================================
-  // 1. SEED PRIORITY CONFIGURATIONS
+  // 1. SEED USERS
+  // ============================================
+  console.log('👥 Seeding Users...');
+
+  const adminPassword = await bcrypt.hash('admin123', 10);
+  const userPassword = await bcrypt.hash('user123', 10);
+
+  const adminUser = await prisma.user.upsert({
+    where: { email: 'admin@deliverygenie.com' },
+    update: {},
+    create: {
+      name: 'Admin User',
+      email: 'admin@deliverygenie.com',
+      password: adminPassword,
+      role: 'admin',
+      isActive: true
+    }
+  });
+
+  const normalUser = await prisma.user.upsert({
+    where: { email: 'user@deliverygenie.com' },
+    update: {},
+    create: {
+      name: 'Normal User',
+      email: 'user@deliverygenie.com',
+      password: userPassword,
+      role: 'user',
+      isActive: true
+    }
+  });
+
+  console.log(`✅ Created users: ${adminUser.email} (${adminUser.role}), ${normalUser.email} (${normalUser.role})\n`);
+
+  // ============================================
+  // 2. SEED PRIORITY CONFIGURATIONS
   // ============================================
   console.log('📊 Seeding Priority Configurations...');
 
@@ -711,6 +746,70 @@ async function main() {
     }
 
     console.log(`✅ Created 5 sample orders\n`);
+
+    // ===================================
+    // Create Sample Deliveries
+    // ===================================
+    console.log('📦 Creating sample deliveries...');
+
+    // Fetch drivers and vehicles from database
+    const dbDrivers = await prisma.driver.findMany();
+    const dbVehicles = await prisma.vehicle.findMany();
+    const dbStores = await prisma.store.findMany();
+
+    const allOrders = [order1, order2, order3, order4, order5];
+    const deliveries = [];
+
+    for (let i = 0; i < allOrders.length; i++) {
+      const order = allOrders[i];
+      const driver = dbDrivers[i % dbDrivers.length]; // Rotate through drivers
+      const vehicle = dbVehicles[i % dbVehicles.length]; // Rotate through vehicles
+      const store = dbStores[0]; // Use first store
+
+      // Create delivery with varied statuses and timings
+      const statuses = ['delivered', 'in_transit', 'delivered', 'delivered', 'pending'];
+      const status = statuses[i];
+
+      const pickupTime = new Date(order.order_date.getTime() + 5 * 60000); // 5 min after order
+      const estimatedDuration = 15 + Math.floor(Math.random() * 15); // 15-30 min
+      const actualDuration = status === 'delivered' ? estimatedDuration + Math.floor(Math.random() * 10) - 5 : null;
+      const deliveryTime = status === 'delivered' && actualDuration
+        ? new Date(pickupTime.getTime() + actualDuration * 60000)
+        : null;
+
+      const delay = status === 'delivered' && deliveryTime && order.delivery_window_end
+        ? Math.max(0, Math.floor((deliveryTime.getTime() - order.delivery_window_end.getTime()) / 60000))
+        : null;
+
+      const delivery = await prisma.delivery.create({
+        data: {
+          delivery_number: `DEL-${Date.now()}-${String(i + 1).padStart(3, '0')}`,
+          order_id: order.id,
+          driver_id: driver.id,
+          vehicle_id: vehicle.id,
+          delivery_status: status,
+          pickup_location: store.address,
+          pickup_latitude: store.latitude,
+          pickup_longitude: store.longitude,
+          pickup_time: pickupTime,
+          delivery_location: order.delivery_address,
+          delivery_latitude: order.delivery_latitude,
+          delivery_longitude: order.delivery_longitude,
+          delivery_time: deliveryTime,
+          estimated_distance_km: 5 + Math.random() * 10,
+          actual_distance_km: status === 'delivered' ? 5 + Math.random() * 10 : null,
+          estimated_duration_min: estimatedDuration,
+          actual_duration_min: actualDuration,
+          planned_arrival: new Date(pickupTime.getTime() + estimatedDuration * 60000),
+          actual_arrival: deliveryTime,
+          delay_minutes: delay,
+        },
+      });
+
+      deliveries.push(delivery);
+    }
+
+    console.log(`✅ Created ${deliveries.length} sample deliveries\n`);
   }
 
   console.log('✨ Seeding completed successfully!\n');
@@ -721,6 +820,7 @@ async function main() {
   console.log(`   - ${vehicles.length} Vehicles`);
   console.log(`   - ${customers.length} Customers`);
   console.log(`   - 5 Sample Orders`);
+  console.log(`   - 5 Sample Deliveries`);
   console.log(`   - 2 Priority Configs\n`);
 }
 
