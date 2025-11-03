@@ -45,6 +45,7 @@ export const TEMPERATURE_SCORES = {
   beverage: 40,    // 15-20°C - Lasts longer
   snack: 20,       // Ambient - Doesn't spoil
   medicine: 60,    // Ambient - Requires care
+  daily_goods: 20, // Ambient - Doesn't spoil
 } as const;
 
 // ============================================

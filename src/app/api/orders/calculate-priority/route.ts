@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
 
     // Add suggested delivery order
     sorted.forEach((result, index) => {
-      (result as any).suggested_delivery_order = index + 1;
+      (result as typeof result & { suggested_delivery_order: number }).suggested_delivery_order = index + 1;
     });
 
     return NextResponse.json({

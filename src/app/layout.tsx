@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import SessionProvider from '@/components/SessionProvider';
+import { CartProvider } from '@/contexts/CartContext';
 
 export const metadata: Metadata = {
   title: 'DeliveryGenie Priority System',
@@ -14,7 +16,11 @@ export default function RootLayout({
   return (
     <html lang="th">
       <body className="antialiased">
-        {children}
+        <SessionProvider>
+          <CartProvider>
+            {children}
+          </CartProvider>
+        </SessionProvider>
       </body>
     </html>
   );

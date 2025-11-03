@@ -3,7 +3,7 @@
 // ===================================
 
 // Database
-export { prisma } from './db/prisma';
+export { prisma } from './db';
 export * from './db/queries';
 
 // Types
@@ -15,3 +15,4 @@ export * from './config/constants';
 
 // Utils
 export * from './utils/priority-calculator';
+export * from './utils/route-optimizer';

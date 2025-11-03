@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, JSX } from 'react';
-import { Menu,  TrendingUp, TrendingDown, Clock, Package, Truck, MapPin, AlertCircle, CheckCircle } from 'lucide-react';
-import Link from 'next/link';
+import { TrendingUp, TrendingDown, Clock, Package, Truck, MapPin, AlertCircle, CheckCircle } from 'lucide-react';
+import { Navigation } from '@/components';
 
 // ===================================
 // Types & Interfaces
@@ -38,27 +38,15 @@ interface ActiveDelivery {
 }
 
 // ===================================
-// Mock Data Generator
+// API Data Fetching
 // ===================================
 
-const generateRealtimeData = (existingData: RealtimeMetric[]): RealtimeMetric => {
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  
-  return {
-    time: timeStr,
-    deliveries: Math.floor(Math.random() * 20) + 40,
-    onTime: Math.floor(Math.random() * 15) + 35,
-    delayed: Math.floor(Math.random() * 8) + 2
-  };
-};
-
-const mockActiveDeliveries: ActiveDelivery[] = [
-  { id: 'D001', driver: 'หนุ่ม น้อย', location: 'ลาดพร้าว', eta: '45 นาที', status: 'on_track' },
-  { id: 'D002', driver: 'มิว อินโทรเวิร์ต', location: 'เชียงราก', eta: '12 นาที', status: 'on_track' },
-  { id: 'D003', driver: 'บอมบ์ มั่งคั่ง', location: 'เตาปูน', eta: '35 นาที', status: 'delayed' },
-  { id: 'D004', driver: 'แฮม ร่ำรวย', location: 'คลองหลวง', eta: '30 นาที', status: 'urgent' }
-];
+interface AnalyticsData {
+  metrics: MetricData[];
+  deliveryStatus: DeliveryStatus[];
+  activeDeliveries: ActiveDelivery[];
+  realtimeData: RealtimeMetric[];
+}
 
 // ===================================
 // Main Component
@@ -67,30 +55,43 @@ const mockActiveDeliveries: ActiveDelivery[] = [
 export default function RealtimeAnalyticsDashboard() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isLive, setIsLive] = useState(true);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [realtimeData, setRealtimeData] = useState<RealtimeMetric[]>([
-    { time: '15:30:00', deliveries: 45, onTime: 40, delayed: 5 },
-    { time: '15:30:05', deliveries: 48, onTime: 43, delayed: 5 },
-    { time: '15:30:10', deliveries: 52, onTime: 46, delayed: 6 },
-    { time: '15:30:15', deliveries: 47, onTime: 42, delayed: 5 },
-    { time: '15:30:20', deliveries: 50, onTime: 45, delayed: 5 }
-  ]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [metrics, setMetrics] = useState<MetricData[]>([
-    { label: 'Total Deliveries', value: 1247, change: 12.5, trend: 'up' },
-    { label: 'On-Time Rate', value: 94.2, change: 2.3, trend: 'up' },
-    { label: 'Active Drivers', value: 28, change: -3.1, trend: 'down' },
-    { label: 'Avg Delivery Time', value: 23, change: -5.2, trend: 'down' }
-  ]);
+  const [realtimeData, setRealtimeData] = useState<RealtimeMetric[]>([]);
+  const [metrics, setMetrics] = useState<MetricData[]>([]);
+  const [deliveryStatus, setDeliveryStatus] = useState<DeliveryStatus[]>([]);
+  const [activeDeliveries, setActiveDeliveries] = useState<ActiveDelivery[]>([]);
 
-  const [deliveryStatus, setDeliveryStatus] = useState<DeliveryStatus[]>([
-    { status: 'Delivered', count: 856, percentage: 68.6, color: '#00A550' },
-    { status: 'In Transit', count: 285, percentage: 22.9, color: '#3B82F6' },
-    { status: 'Pending', count: 78, percentage: 6.3, color: '#F59E0B' },
-    { status: 'Failed', count: 28, percentage: 2.2, color: '#EF4444' }
-  ]);
+  // Fetch analytics data from API
+  const fetchAnalytics = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch('/api/analytics');
+      const result = await response.json();
 
-  // Simulate real-time updates
+      if (result.success) {
+        setMetrics(result.metrics);
+        setDeliveryStatus(result.deliveryStatus);
+        setActiveDeliveries(result.activeDeliveries);
+        setRealtimeData(result.realtimeData);
+      } else {
+        setError(result.error || 'Failed to fetch analytics');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch analytics');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch data on mount
+  useEffect(() => {
+    fetchAnalytics();
+  }, []);
+
+  // Update time every second
   useEffect(() => {
     const timeInterval = setInterval(() => {
       setCurrentTime(new Date());
@@ -99,22 +100,13 @@ export default function RealtimeAnalyticsDashboard() {
     return () => clearInterval(timeInterval);
   }, []);
 
+  // Auto-refresh data every 5 seconds when live
   useEffect(() => {
     if (!isLive) return;
 
     const dataInterval = setInterval(() => {
-      setRealtimeData(prev => {
-        const newData = [...prev.slice(1), generateRealtimeData(prev)];
-        return newData;
-      });
-
-      // Update metrics with random changes
-      setMetrics(prev => prev.map(m => ({
-        ...m,
-        value: m.value + (Math.random() - 0.5) * 2,
-        change: (Math.random() - 0.5) * 5
-      })));
-    }, 2000); // Update every 2 seconds (เร็วขึ้น!)
+      fetchAnalytics();
+    }, 5000);
 
     return () => clearInterval(dataInterval);
   }, [isLive]);
@@ -149,46 +141,9 @@ export default function RealtimeAnalyticsDashboard() {
               </div>
             </div>
 
+            <Navigation />
 
-            <div className="relative">
-      {/* Hamburger Button */}
-      <button
-        className="flex items-center justify-center p-2 bg-seven-green rounded-lg shadow-lg fixed top-4 left-4 z-50"
-        onClick={() => setMenuOpen(!menuOpen)}
-      >
-        <Menu className="w-6 h-6 text-white" />
-      </button>
-
-      {/* Dropdown Menu */}
-      {menuOpen && (
-        <div className="fixed top-16 left-4 w-48 bg-white text-gray-800 rounded-lg shadow-lg z-50">
-          <Link
-            href="/"
-            className="block px-4 py-2 hover:bg-gray-100"
-            onClick={() => setMenuOpen(false)}
-          >
-            🌟 Priority System
-          </Link>
-          <Link
-            href="/driver-performance"
-            className="block px-4 py-2 hover:bg-gray-100"
-            onClick={() => setMenuOpen(false)}
-          >
-            🚚 Driver Performance
-          </Link>
-          <Link 
-            href="/analytics"
-            className="block px-4 py-2 hover:bg-gray-100"
-            onClick={() => setMenuOpen(false)}
-          >
-            📊 Real-time Analytics
-          </Link>
-        </div>
-      )}
-    </div>
-
-
-              {/* Time */}
+            {/* Time */}
               <div className="text-right bg-white/10 px-6 py-3 rounded-lg backdrop-blur-sm">
               <div className="text-sm text-green-50">เวลาปัจจุบัน</div>
               <div className="text-2xl font-bold">
@@ -448,7 +403,7 @@ export default function RealtimeAnalyticsDashboard() {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {mockActiveDeliveries.map((delivery) => (
+            {activeDeliveries.map((delivery) => (
               <div 
                 key={delivery.id}
                 className={`p-4 rounded-lg border-2 ${getStatusColor(delivery.status)}`}
