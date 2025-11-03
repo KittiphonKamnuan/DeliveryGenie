@@ -3,6 +3,13 @@
 import { useState, useEffect } from 'react';
 import { Menu, MapPin, Navigation, Zap, TrendingUp, RefreshCw, Play } from 'lucide-react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
+
+// Dynamically import map component (client-side only)
+const RouteOptimizationMap = dynamic(
+  () => import('@/components/map/RouteOptimizationMap'),
+  { ssr: false, loading: () => <div className="h-96 bg-gray-100 rounded-lg animate-pulse" /> }
+);
 
 // ===================================
 // Types & Interfaces
@@ -310,19 +317,19 @@ export default function RouteOptimizationPage() {
 
           {/* Right Panel - Results */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Map Placeholder */}
+            {/* Interactive Map */}
             <div className="bg-white rounded-xl shadow-sm p-6">
               <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <Navigation className="w-5 h-5 text-seven-green" />
                 Route Visualization
               </h2>
-              <div className="bg-gray-100 rounded-lg h-96 flex items-center justify-center">
-                <div className="text-center text-gray-500">
-                  <MapPin className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-                  <p className="text-lg font-medium">Map will be displayed here</p>
-                  <p className="text-sm">Integration with Google Maps or Leaflet</p>
-                </div>
-              </div>
+              <RouteOptimizationMap
+                locations={locations}
+                optimizationResult={routeResult}
+                showOptimizedRoute={true}
+                showOriginalRoute={!!routeResult}
+                height="500px"
+              />
             </div>
 
             {/* Results */}

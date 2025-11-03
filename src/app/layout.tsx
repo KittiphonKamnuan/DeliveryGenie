@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import 'leaflet/dist/leaflet.css';
 import SessionProvider from '@/components/SessionProvider';
 import { CartProvider } from '@/contexts/CartContext';
 
