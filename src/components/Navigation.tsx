@@ -107,6 +107,13 @@ export default function Navigation() {
                 >
                   🗺️ Route Optimization
                 </Link>
+                <Link
+                  href="/vehicle-tracking"
+                  className="block px-4 py-2 hover:bg-gray-100 transition-colors"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  📍 Vehicle Tracking
+                </Link>
 
                 <div className="border-t border-gray-200 my-2"></div>
                 <div className="px-4 py-1 text-xs font-semibold text-gray-500 uppercase">
