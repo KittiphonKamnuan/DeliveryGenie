@@ -1,0 +1,3 @@
+{
+  "body": "{\"gps_updates\":[{\"driver_id\":\"550e8400-e29b-41d4-a716-446655440003\",\"delivery_id\":\"550e8400-e29b-41d4-a716-446655440200\",\"lat\":13.7563,\"lon\":100.5018,\"speed_kmh\":45.5,\"bearing\":270,\"accuracy_meters\":10,\"timestamp\":\"2025-11-22T10:15:30Z\"},{\"driver_id\":\"550e8400-e29b-41d4-a716-446655440004\",\"delivery_id\":\"550e8400-e29b-41d4-a716-446655440201\",\"lat\":13.7465,\"lon\":100.5344,\"speed_kmh\":38.2,\"bearing\":90,\"accuracy_meters\":15,\"timestamp\":\"2025-11-22T10:15:35Z\"}]}"
+}

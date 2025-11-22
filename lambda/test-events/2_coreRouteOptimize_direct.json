@@ -1,0 +1,26 @@
+{
+  "origin": {
+    "lat": 13.7563,
+    "lon": 100.5018
+  },
+  "stores": [
+    {
+      "id": "store_001",
+      "name": "7-Eleven Asok",
+      "lat": 13.7465,
+      "lon": 100.5344
+    },
+    {
+      "id": "store_002",
+      "name": "7-Eleven Sukhumvit",
+      "lat": 13.7500,
+      "lon": 100.5400
+    },
+    {
+      "id": "store_003",
+      "name": "7-Eleven Thonglor",
+      "lat": 13.7380,
+      "lon": 100.5700
+    }
+  ]
+}

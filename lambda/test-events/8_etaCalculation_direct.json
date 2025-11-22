@@ -1,0 +1,11 @@
+{
+  "origin": {
+    "lat": 13.7563,
+    "lon": 100.5018
+  },
+  "destination": {
+    "lat": 13.7465,
+    "lon": 100.5344
+  },
+  "vehicle_weight_kg": 15.5
+}

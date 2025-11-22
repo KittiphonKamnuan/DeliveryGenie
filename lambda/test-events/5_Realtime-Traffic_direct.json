@@ -1,0 +1,21 @@
+{
+  "stores": [
+    {
+      "name": "Store A",
+      "lat": 13.7563,
+      "lon": 100.5018
+    },
+    {
+      "name": "Store B",
+      "lat": 13.7465,
+      "lon": 100.5344
+    },
+    {
+      "name": "Store C",
+      "lat": 13.7500,
+      "lon": 100.5400
+    }
+  ],
+  "start_index": 0,
+  "use_real_api": false
+}

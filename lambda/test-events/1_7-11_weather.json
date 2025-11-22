@@ -1,0 +1,9 @@
+{
+  "_comment": "7-11_weather.py - Scheduled Event (EventBridge Cron)",
+  "_note": "This Lambda is triggered automatically by EventBridge schedule, no input required",
+  "source": "aws.events",
+  "detail-type": "Scheduled Event",
+  "resources": [
+    "arn:aws:events:ap-southeast-1:123456789012:rule/weather-forecast-schedule"
+  ]
+}
