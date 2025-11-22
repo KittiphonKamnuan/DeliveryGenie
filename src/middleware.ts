@@ -1,7 +1,28 @@
 // ===================================
 // Middleware - Route Protection
+// TEMPORARILY DISABLED FOR DEMO/DEVELOPMENT
 // ===================================
 
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+// Temporarily allow all routes for demo purposes
+export function middleware(req: NextRequest) {
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: [
+    '/((?!api/auth|_next/static|_next/image|favicon.ico|public).*)',
+  ],
+};
+
+// ===================================
+// ORIGINAL AUTH MIDDLEWARE (COMMENTED OUT)
+// Uncomment when database and auth are configured
+// ===================================
+
+/*
 import { withAuth } from 'next-auth/middleware';
 import { NextResponse } from 'next/server';
 
@@ -55,14 +76,8 @@ export default withAuth(
   },
   {
     callbacks: {
-      authorized: ({ token }) => true, // We handle authorization in middleware function
+      authorized: ({ token }) => true,
     },
   }
 );
-
-// Protect all routes except public ones
-export const config = {
-  matcher: [
-    '/((?!api/auth|_next/static|_next/image|favicon.ico|public).*)',
-  ],
-};
+*/
