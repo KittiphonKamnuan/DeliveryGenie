@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { CheckCircle, Package, ArrowLeft } from 'lucide-react';
 import { Header, Button, LoadingSpinner } from '@/components';
 import Link from 'next/link';
 
-export default function OrderSuccessPage() {
+function OrderSuccessContent() {
   const searchParams = useSearchParams();
   const orderId = searchParams.get('order_id');
   const [loading, setLoading] = useState(true);
@@ -122,5 +122,20 @@ export default function OrderSuccessPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function OrderSuccessPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50">
+        <Header title="Order Success" subtitle="สั่งซื้อสำเร็จ" />
+        <div className="flex items-center justify-center py-20">
+          <LoadingSpinner size="lg" message="กำลังโหลด..." />
+        </div>
+      </div>
+    }>
+      <OrderSuccessContent />
+    </Suspense>
   );
 }
