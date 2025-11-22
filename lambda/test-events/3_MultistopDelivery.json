@@ -1,0 +1,3 @@
+{
+  "body": "{\"origin\":{\"name\":\"Distribution Center\",\"lat\":13.7563,\"lon\":100.5018},\"stores\":[{\"name\":\"Customer A\",\"lat\":13.7465,\"lon\":100.5344,\"priority\":8,\"is_urgent\":true,\"is_perishable\":false},{\"name\":\"Customer B\",\"lat\":13.75,\"lon\":100.54,\"priority\":5,\"is_urgent\":false,\"is_perishable\":true},{\"name\":\"Customer C\",\"lat\":13.738,\"lon\":100.57,\"priority\":7,\"is_urgent\":false,\"is_perishable\":false}],\"use_priority\":true}"
+}

@@ -32,16 +32,16 @@ export async function POST(request: NextRequest) {
 
     // 1. Get top 10 stores from Lambda API
     const storesResponse = await fetch(
-      'https://smur3erut5.execute-api.us-east-1.amazonaws.com/dev/stores',
+      process.env.LAMBDA_NEARBY_7_URL || 'https://rywh91krwb.execute-api.ap-southeast-1.amazonaws.com/prod/nearby7',
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          latitude: latitude,
-          longitude: longitude,
-          radius: 5, // 5 km radius
+          lat: latitude,
+          lon: longitude,
+          limit: 10
         }),
       }
     );

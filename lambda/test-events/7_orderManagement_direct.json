@@ -1,0 +1,17 @@
+{
+  "_note": "⚠️ Replace these UUIDs with real IDs from your database",
+  "customer_id": "550e8400-e29b-41d4-a716-446655440001",
+  "store_id": "550e8400-e29b-41d4-a716-446655440002",
+  "items": [
+    {
+      "product_id": "550e8400-e29b-41d4-a716-446655440010",
+      "quantity": 2
+    },
+    {
+      "product_id": "550e8400-e29b-41d4-a716-446655440011",
+      "quantity": 1
+    }
+  ],
+  "delivery_window_start": "2025-11-22T14:00:00",
+  "delivery_window_end": "2025-11-22T16:00:00"
+}

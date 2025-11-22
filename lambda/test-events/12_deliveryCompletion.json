@@ -1,0 +1,4 @@
+{
+  "body": "{\"delivery_id\":\"550e8400-e29b-41d4-a716-446655440200\",\"proof_of_delivery_url\":\"s3://deliverygenie-proof/2025/11/22/proof_001.jpg\",\"customer_signature\":\"base64_encoded_signature_image\",\"customer_rating\":5.0,\"actual_distance_km\":5.1,\"was_on_time\":true,\"notes\":\"Customer was very satisfied. Left package at the door as requested.\"}",
+  "_note": "⚠️ Replace delivery_id with a real delivery ID (status != 'delivered')"
+}

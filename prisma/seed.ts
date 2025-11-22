@@ -5,6 +5,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 
 const prisma = new PrismaClient();
 
@@ -19,27 +20,31 @@ async function main() {
   const adminPassword = await bcrypt.hash('admin123', 10);
   const userPassword = await bcrypt.hash('user123', 10);
 
-  const adminUser = await prisma.user.upsert({
+  const adminUser = await prisma.users.upsert({
     where: { email: 'admin@deliverygenie.com' },
     update: {},
     create: {
+      id: randomUUID(),
       name: 'Admin User',
       email: 'admin@deliverygenie.com',
       password: adminPassword,
       role: 'admin',
-      isActive: true
+      isActive: true,
+      updated_at: new Date()
     }
   });
 
-  const normalUser = await prisma.user.upsert({
+  const normalUser = await prisma.users.upsert({
     where: { email: 'user@deliverygenie.com' },
     update: {},
     create: {
+      id: randomUUID(),
       name: 'Normal User',
       email: 'user@deliverygenie.com',
       password: userPassword,
       role: 'user',
-      isActive: true
+      isActive: true,
+      updated_at: new Date()
     }
   });
 
@@ -50,10 +55,11 @@ async function main() {
   // ============================================
   console.log('📊 Seeding Priority Configurations...');
 
-  const defaultConfig = await prisma.priorityConfig.upsert({
+  const defaultConfig = await prisma.priority_configs.upsert({
     where: { config_name: 'default' },
     update: {},
     create: {
+      id: randomUUID(),
       config_name: 'default',
       description: 'Standard priority calculation weights',
       weight_temperature: 0.30,
@@ -68,14 +74,16 @@ async function main() {
         medium: 40,
         low: 0
       },
-      is_active: true
+      is_active: true,
+      updated_at: new Date()
     }
   });
 
-  const rushHourConfig = await prisma.priorityConfig.upsert({
+  const rushHourConfig = await prisma.priority_configs.upsert({
     where: { config_name: 'rush_hour' },
     update: {},
     create: {
+      id: randomUUID(),
       config_name: 'rush_hour',
       description: 'Higher time window weight during rush hours',
       weight_temperature: 0.25,
@@ -90,7 +98,8 @@ async function main() {
         medium: 40,
         low: 0
       },
-      is_active: false
+      is_active: false,
+      updated_at: new Date()
     }
   });
 
@@ -104,6 +113,7 @@ async function main() {
   const products = [
     // Hot Food
     {
+      id: randomUUID(),
       sku: 'HOT-001',
       name: 'ข้าวกล่องหมูกระเพรา',
       description: 'ข้าวราดหมูกระเพรา พร้อมไข่ดาว',
@@ -115,9 +125,12 @@ async function main() {
       typical_expiration_hours: 3,
       is_fragile: false,
       weight_kg: 0.5,
-      dimensions: { width: 15, height: 5, depth: 20 }
+      updated_at: new Date(),
+      dimensions: { width: 15, height: 5, depth: 20 },
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       sku: 'HOT-002',
       name: 'เกี๊ยวน้ำ',
       description: 'เกี๊ยวน้ำหมู 10 ชิ้น',
@@ -128,11 +141,13 @@ async function main() {
       temp_max_celsius: 70,
       typical_expiration_hours: 3,
       is_fragile: false,
-      weight_kg: 0.4
+      weight_kg: 0.4,
+      updated_at: new Date()
     },
 
     // Frozen
     {
+      id: randomUUID(),
       sku: 'FRZ-001',
       name: 'ไอศกรีมวานิลลา',
       description: 'ไอศกรีม Wall\'s 1 ลิตร',
@@ -143,9 +158,11 @@ async function main() {
       temp_max_celsius: -15,
       typical_expiration_hours: 720, // 30 days
       is_fragile: false,
-      weight_kg: 1.1
+      weight_kg: 1.1,
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       sku: 'FRZ-002',
       name: 'พิซซ่าแช่แข็ง',
       description: 'พิซซ่าชีสเดนมาร์ก',
@@ -156,11 +173,13 @@ async function main() {
       temp_max_celsius: -15,
       typical_expiration_hours: 2160, // 90 days
       is_fragile: false,
-      weight_kg: 0.6
+      weight_kg: 0.6,
+      updated_at: new Date()
     },
 
     // Chilled
     {
+      id: randomUUID(),
       sku: 'CHL-001',
       name: 'แซนด์วิชไข่ทูน่า',
       description: 'แซนด์วิชไข่ผสมทูน่า',
@@ -171,9 +190,11 @@ async function main() {
       temp_max_celsius: 4,
       typical_expiration_hours: 8,
       is_fragile: false,
-      weight_kg: 0.2
+      weight_kg: 0.2,
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       sku: 'CHL-002',
       name: 'นมสดเดนมาร์ก',
       description: 'นมสดพาสเจอร์ไรส์ 1 ลิตร',
@@ -184,11 +205,13 @@ async function main() {
       temp_max_celsius: 4,
       typical_expiration_hours: 168, // 7 days
       is_fragile: false,
-      weight_kg: 1.0
+      weight_kg: 1.0,
+      updated_at: new Date()
     },
 
     // Beverage
     {
+      id: randomUUID(),
       sku: 'BEV-001',
       name: 'น้ำดื่มสิงห์',
       description: 'น้ำดื่ม 600ml',
@@ -199,9 +222,11 @@ async function main() {
       temp_max_celsius: 20,
       typical_expiration_hours: 8760, // 1 year
       is_fragile: false,
-      weight_kg: 0.6
+      weight_kg: 0.6,
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       sku: 'BEV-002',
       name: 'โค้กกระป๋อง',
       description: 'Coca-Cola 325ml',
@@ -212,11 +237,13 @@ async function main() {
       temp_max_celsius: 20,
       typical_expiration_hours: 8760,
       is_fragile: false,
-      weight_kg: 0.35
+      weight_kg: 0.35,
+      updated_at: new Date()
     },
 
     // Snack
     {
+      id: randomUUID(),
       sku: 'SNK-001',
       name: 'มาม่า 5 ห่อ',
       description: 'บะหมี่กึ่งสำเร็จรูป หมูสับ',
@@ -225,9 +252,11 @@ async function main() {
       temperature_requirement: 'ambient',
       typical_expiration_hours: 4320, // 6 months
       is_fragile: false,
-      weight_kg: 0.3
+      weight_kg: 0.3,
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       sku: 'SNK-002',
       name: 'เลย์ รสต้มยำกุ้ง',
       description: 'มันฝรั่งทอด 48g',
@@ -236,11 +265,13 @@ async function main() {
       temperature_requirement: 'ambient',
       typical_expiration_hours: 4320,
       is_fragile: true, // Chips can break!
-      weight_kg: 0.05
+      weight_kg: 0.05,
+      updated_at: new Date()
     },
 
     // Medicine
     {
+      id: randomUUID(),
       sku: 'MED-001',
       name: 'พาราเซตามอล',
       description: 'ยาแก้ปวด ลดไข้ 10 เม็ด',
@@ -249,9 +280,11 @@ async function main() {
       temperature_requirement: 'ambient',
       typical_expiration_hours: 17520, // 2 years
       is_fragile: true,
-      weight_kg: 0.02
+      weight_kg: 0.02,
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       sku: 'MED-002',
       name: 'ครีมทาแผล',
       description: 'ครีมปฏิชีวนะทาแผล 5g',
@@ -260,12 +293,13 @@ async function main() {
       temperature_requirement: 'ambient',
       typical_expiration_hours: 17520,
       is_fragile: false,
-      weight_kg: 0.01
+      weight_kg: 0.01,
+      updated_at: new Date()
     }
   ];
 
   for (const product of products) {
-    await prisma.product.upsert({
+    await prisma.products.upsert({
       where: { sku: product.sku },
       update: {},
       create: product
@@ -281,6 +315,7 @@ async function main() {
 
   const stores = [
     {
+      id: randomUUID(),
       store_code: '7ELV-BKK-001',
       name: '7-Eleven',
       branch_name: 'สาขามหาวิทยาลัยธรรมศาสตร์ ศูนย์รังสิต',
@@ -293,9 +328,11 @@ async function main() {
       longitude: 100.5950,
       phone: '02-123-4567',
       is_24_hours: true,
-      has_parking: true
+      has_parking: true,
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       store_code: '7ELV-BKK-002',
       name: '7-Eleven',
       branch_name: 'สาขาสยามพารากอน',
@@ -308,9 +345,11 @@ async function main() {
       longitude: 100.5349,
       phone: '02-234-5678',
       is_24_hours: true,
-      has_parking: true
+      has_parking: true,
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       store_code: '7ELV-BKK-003',
       name: '7-Eleven',
       branch_name: 'สาขาเซ็นทรัลเวิลด์',
@@ -323,9 +362,11 @@ async function main() {
       longitude: 100.5395,
       phone: '02-345-6789',
       is_24_hours: true,
-      has_parking: false
+      has_parking: false,
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       store_code: '7ELV-BKK-004',
       name: '7-Eleven',
       branch_name: 'สาขาสนามบินสุวรรณภูมิ',
@@ -338,9 +379,11 @@ async function main() {
       longitude: 100.7501,
       phone: '02-456-7890',
       is_24_hours: true,
-      has_parking: true
+      has_parking: true,
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       store_code: '7ELV-BKK-005',
       name: '7-Eleven',
       branch_name: 'สาขาเมกาบางนา',
@@ -353,12 +396,13 @@ async function main() {
       longitude: 100.6429,
       phone: '02-567-8901',
       is_24_hours: true,
-      has_parking: true
+      has_parking: true,
+      updated_at: new Date()
     }
   ];
 
   for (const store of stores) {
-    await prisma.store.upsert({
+    await prisma.stores.upsert({
       where: { store_code: store.store_code },
       update: {},
       create: store
@@ -374,6 +418,7 @@ async function main() {
 
   const drivers = [
     {
+      id: randomUUID(),
       employee_id: 'DRV-001',
       first_name: 'สมชาย',
       last_name: 'ใจดี',
@@ -383,9 +428,11 @@ async function main() {
       license_type: 'B',
       rating: 4.8,
       total_deliveries: 1250,
-      on_time_rate: 0.92
+      on_time_rate: 0.92,
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       employee_id: 'DRV-002',
       first_name: 'สมหญิง',
       last_name: 'รักงาน',
@@ -395,9 +442,11 @@ async function main() {
       license_type: 'B',
       rating: 4.9,
       total_deliveries: 2100,
-      on_time_rate: 0.95
+      on_time_rate: 0.95,
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       employee_id: 'DRV-003',
       first_name: 'วิชัย',
       last_name: 'มานะ',
@@ -407,12 +456,13 @@ async function main() {
       license_type: 'A',
       rating: 4.7,
       total_deliveries: 890,
-      on_time_rate: 0.89
+      on_time_rate: 0.89,
+      updated_at: new Date()
     }
   ];
 
   for (const driver of drivers) {
-    await prisma.driver.upsert({
+    await prisma.drivers.upsert({
       where: { employee_id: driver.employee_id },
       update: {},
       create: driver
@@ -428,6 +478,7 @@ async function main() {
 
   const vehicles = [
     {
+      id: randomUUID(),
       vehicle_number: 'VEH-001',
       vehicle_type: 'motorcycle',
       license_plate: 'กข-1234',
@@ -438,9 +489,11 @@ async function main() {
       capacity_weight_kg: 50,
       capacity_volume_m3: 0.3,
       fuel_type: 'gasoline',
-      fuel_efficiency: 35 // km/liter
+      fuel_efficiency: 35, // km/liter
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       vehicle_number: 'VEH-002',
       vehicle_type: 'van',
       license_plate: 'คง-5678',
@@ -452,9 +505,11 @@ async function main() {
       capacity_weight_kg: 450,
       capacity_volume_m3: 2.5,
       fuel_type: 'diesel',
-      fuel_efficiency: 12
+      fuel_efficiency: 12,
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       vehicle_number: 'VEH-003',
       vehicle_type: 'van',
       license_plate: 'จฉ-9012',
@@ -466,12 +521,13 @@ async function main() {
       capacity_weight_kg: 400,
       capacity_volume_m3: 2.3,
       fuel_type: 'gasoline',
-      fuel_efficiency: 10
+      fuel_efficiency: 10,
+      updated_at: new Date()
     }
   ];
 
   for (const vehicle of vehicles) {
-    await prisma.vehicle.upsert({
+    await prisma.vehicles.upsert({
       where: { vehicle_number: vehicle.vehicle_number },
       update: {},
       create: vehicle
@@ -487,6 +543,7 @@ async function main() {
 
   const customers = [
     {
+      id: randomUUID(),
       name: 'บริษัท ABC จำกัด',
       phone: '0912345678',
       email: 'contact@abc.com',
@@ -496,9 +553,11 @@ async function main() {
       postal_code: '10110',
       latitude: 13.7307,
       longitude: 100.5418,
-      priority_level: 'high'
+      priority_level: 'high',
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       name: 'คุณสมศรี ใจดี',
       phone: '0923456789',
       email: 'somsri@email.com',
@@ -508,9 +567,11 @@ async function main() {
       postal_code: '10310',
       latitude: 13.7631,
       longitude: 100.5749,
-      priority_level: 'standard'
+      priority_level: 'standard',
+      updated_at: new Date()
     },
     {
+      id: randomUUID(),
       name: 'โรงพยาบาล XYZ',
       phone: '0934567890',
       email: 'urgent@xyz-hospital.com',
@@ -521,12 +582,12 @@ async function main() {
       latitude: 13.7596,
       longitude: 100.5686,
       priority_level: 'urgent',
-      delivery_notes: 'ส่งที่แผนกฉุกเฉิน โทรหาเจ้าหน้าที่ก่อนส่ง'
+      updated_at: new Date()
     }
   ];
 
   for (const customer of customers) {
-    await prisma.customer.upsert({
+    await prisma.customers.upsert({
       where: { phone: customer.phone },
       update: {},
       create: customer
@@ -541,9 +602,9 @@ async function main() {
   console.log('📦 Seeding Sample Orders...');
 
   // Get all products, customers, and stores
-  const allProducts = await prisma.product.findMany();
-  const allCustomers = await prisma.customer.findMany();
-  const allStores = await prisma.store.findMany();
+  const allProducts = await prisma.products.findMany();
+  const allCustomers = await prisma.customers.findMany();
+  const allStores = await prisma.stores.findMany();
 
   if (allProducts.length === 0 || allCustomers.length === 0 || allStores.length === 0) {
     console.log('⚠️  Skipping orders - missing required data');
@@ -557,8 +618,9 @@ async function main() {
 
     const order1Total = (hotFood ? hotFood.base_price * 1 : 0) + (beverage ? beverage.base_price * 2 : 0);
 
-    const order1 = await prisma.order.create({
+    const order1 = await prisma.orders.create({
       data: {
+        id: randomUUID(),
         order_number: `ORD-${Date.now()}-001`,
         customer_id: customer1.id,
         order_date: now,
@@ -573,12 +635,14 @@ async function main() {
         delivery_notes: 'อาหารร้อน ส่งด่วน',
         subtotal: order1Total,
         total_amount: order1Total,
+        updated_at: new Date()
       },
     });
 
     if (hotFood) {
-      await prisma.orderItem.create({
+      await prisma.order_items.create({
         data: {
+          id: randomUUID(),
           order_id: order1.id,
           product_id: hotFood.id,
           quantity: 1,
@@ -589,8 +653,9 @@ async function main() {
       });
     }
     if (beverage) {
-      await prisma.orderItem.create({
+      await prisma.order_items.create({
         data: {
+          id: randomUUID(),
           order_id: order1.id,
           product_id: beverage.id,
           quantity: 2,
@@ -606,8 +671,9 @@ async function main() {
     const frozen = allProducts.find(p => p.category === 'frozen');
     const order2Total = frozen ? frozen.base_price * 2 : 0;
 
-    const order2 = await prisma.order.create({
+    const order2 = await prisma.orders.create({
       data: {
+        id: randomUUID(),
         order_number: `ORD-${Date.now()}-002`,
         customer_id: customer2.id,
         order_date: now,
@@ -622,12 +688,14 @@ async function main() {
         delivery_notes: 'มีไอศกรีม ระวังละลาย',
         subtotal: order2Total,
         total_amount: order2Total,
+        updated_at: new Date()
       },
     });
 
     if (frozen) {
-      await prisma.orderItem.create({
+      await prisma.order_items.create({
         data: {
+          id: randomUUID(),
           order_id: order2.id,
           product_id: frozen.id,
           quantity: 2,
@@ -643,8 +711,9 @@ async function main() {
     const chilled = allProducts.find(p => p.category === 'chilled');
     const order3Total = chilled ? chilled.base_price * 2 : 0;
 
-    const order3 = await prisma.order.create({
+    const order3 = await prisma.orders.create({
       data: {
+        id: randomUUID(),
         order_number: `ORD-${Date.now()}-003`,
         customer_id: customer3.id,
         order_date: now,
@@ -658,12 +727,14 @@ async function main() {
         delivery_longitude: customer3.longitude,
         subtotal: order3Total,
         total_amount: order3Total,
+        updated_at: new Date()
       },
     });
 
     if (chilled) {
-      await prisma.orderItem.create({
+      await prisma.order_items.create({
         data: {
+          id: randomUUID(),
           order_id: order3.id,
           product_id: chilled.id,
           quantity: 2,
@@ -678,8 +749,9 @@ async function main() {
     const medicine = allProducts.find(p => p.category === 'medicine');
     const order4Total = medicine ? medicine.base_price * 1 : 0;
 
-    const order4 = await prisma.order.create({
+    const order4 = await prisma.orders.create({
       data: {
+        id: randomUUID(),
         order_number: `ORD-${Date.now()}-004`,
         customer_id: customer1.id,
         order_date: now,
@@ -694,12 +766,14 @@ async function main() {
         delivery_notes: 'ยา - ห้ามโยน',
         subtotal: order4Total,
         total_amount: order4Total,
+        updated_at: new Date()
       },
     });
 
     if (medicine) {
-      await prisma.orderItem.create({
+      await prisma.order_items.create({
         data: {
+          id: randomUUID(),
           order_id: order4.id,
           product_id: medicine.id,
           quantity: 1,
@@ -714,8 +788,9 @@ async function main() {
     const snack = allProducts.find(p => p.category === 'snack');
     const order5Total = snack ? snack.base_price * 5 : 0;
 
-    const order5 = await prisma.order.create({
+    const order5 = await prisma.orders.create({
       data: {
+        id: randomUUID(),
         order_number: `ORD-${Date.now()}-005`,
         customer_id: customer3.id,
         order_date: now,
@@ -729,12 +804,14 @@ async function main() {
         delivery_longitude: customer3.longitude,
         subtotal: order5Total,
         total_amount: order5Total,
+        updated_at: new Date()
       },
     });
 
     if (snack) {
-      await prisma.orderItem.create({
+      await prisma.order_items.create({
         data: {
+          id: randomUUID(),
           order_id: order5.id,
           product_id: snack.id,
           quantity: 5,
@@ -753,9 +830,9 @@ async function main() {
     console.log('📦 Creating sample deliveries...');
 
     // Fetch drivers and vehicles from database
-    const dbDrivers = await prisma.driver.findMany();
-    const dbVehicles = await prisma.vehicle.findMany();
-    const dbStores = await prisma.store.findMany();
+    const dbDrivers = await prisma.drivers.findMany();
+    const dbVehicles = await prisma.vehicles.findMany();
+    const dbStores = await prisma.stores.findMany();
 
     const allOrders = [order1, order2, order3, order4, order5];
     const deliveries = [];
@@ -781,8 +858,9 @@ async function main() {
         ? Math.max(0, Math.floor((deliveryTime.getTime() - order.delivery_window_end.getTime()) / 60000))
         : null;
 
-      const delivery = await prisma.delivery.create({
+      const delivery = await prisma.deliveries.create({
         data: {
+          id: randomUUID(),
           delivery_number: `DEL-${Date.now()}-${String(i + 1).padStart(3, '0')}`,
           order_id: order.id,
           driver_id: driver.id,
@@ -803,6 +881,7 @@ async function main() {
           planned_arrival: new Date(pickupTime.getTime() + estimatedDuration * 60000),
           actual_arrival: deliveryTime,
           delay_minutes: delay,
+          updated_at: new Date()
         },
       });
 
