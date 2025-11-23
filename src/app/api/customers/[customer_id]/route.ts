@@ -7,10 +7,10 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: { customer_id: string } }
 ) {
   try {
-    const customerId = params.id;
+    const customerId = params.customer_id;
 
     const customer = await prisma.customers.findUnique({
       where: { id: customerId }
