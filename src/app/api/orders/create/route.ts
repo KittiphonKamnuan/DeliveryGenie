@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 
 interface CreateOrderRequest {
   customer_name: string;
@@ -63,8 +63,12 @@ export async function POST(request: NextRequest) {
     });
 
     if (!customer) {
+      // Generate unique customer ID
+      const customerId = `CUST-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
       customer = await prisma.customers.create({
         data: {
+          id: customerId,
           name: data.customer_name,
           phone: data.customer_phone,
           email: data.customer_email,
@@ -75,17 +79,20 @@ export async function POST(request: NextRequest) {
           longitude: data.delivery_longitude,
           delivery_notes: data.delivery_notes,
           priority_level: 'standard',
+          updated_at: new Date(),
         },
       });
     }
 
-    // Generate order number
+    // Generate order number and ID
     const orderCount = await prisma.orders.count();
     const orderNumber = `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(orderCount + 1).padStart(4, '0')}`;
+    const orderId = `ORDER-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     // Create order
     const order = await prisma.orders.create({
       data: {
+        id: orderId,
         order_number: orderNumber,
         customer_id: customer.id,
         order_date: new Date(),
@@ -102,8 +109,10 @@ export async function POST(request: NextRequest) {
         tax: data.tax,
         shipping_fee: data.shipping_fee,
         total_amount: data.total_amount,
+        updated_at: new Date(),
         order_items: {
-          create: data.items.map((item) => ({
+          create: data.items.map((item, index) => ({
+            id: `ITEM-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 9)}`,
             product_id: item.product_id,
             quantity: item.quantity,
             unit_price: item.unit_price,
@@ -139,6 +148,7 @@ export async function POST(request: NextRequest) {
         order_number: order.order_number,
         total_amount: order.total_amount,
         order_status: order.order_status,
+        customer_id: customer.id,
       },
       message: 'สร้างคำสั่งซื้อสำเร็จ',
     });

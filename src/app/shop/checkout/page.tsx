@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { CreditCard, MapPin, User, Phone, Mail, Calendar, Clock, AlertCircle, Store as StoreIcon } from 'lucide-react';
-import { Header, Button, LoadingSpinner } from '@/components';
+import { Header, Button, LoadingSpinner, OrderStatusTracker } from '@/components';
 import { useCart } from '@/contexts/CartContext';
 import type { Store } from '@/types/shopping';
 
@@ -18,16 +18,57 @@ export default function CheckoutPage() {
   const [findingStore, setFindingStore] = useState(true);
   const [nearestStore, setNearestStore] = useState<Store | null>(null);
   const [userCoordinates, setUserCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [customerData, setCustomerData] = useState<any>(null);
+
+  // Get customer_id from session or localStorage (for backward compatibility)
+  const customerId = session?.user?.customer_id || (typeof window !== 'undefined' ? localStorage.getItem('customer_id') : null);
 
   const [formData, setFormData] = useState({
-    customer_name: session?.user?.name || '',
+    customer_name: '',
     customer_phone: '',
-    customer_email: session?.user?.email || '',
+    customer_email: '',
     delivery_address: '',
     delivery_notes: '',
     delivery_date: new Date().toISOString().split('T')[0],
     delivery_time: '14:00',
   });
+
+  // Fetch customer data if logged in
+  useEffect(() => {
+    const fetchCustomerData = async () => {
+      if (customerId) {
+        try {
+          const response = await fetch(`/api/customers/${customerId}`);
+          const result = await response.json();
+          if (result.success) {
+            setCustomerData(result.customer);
+            // Pre-fill form with customer data
+            setFormData(prev => ({
+              ...prev,
+              customer_name: result.customer.name || '',
+              customer_phone: result.customer.phone || '',
+              customer_email: result.customer.email || '',
+              delivery_address: result.customer.address_line1
+                ? `${result.customer.address_line1}${result.customer.address_line2 ? ', ' + result.customer.address_line2 : ''}, ${result.customer.district}, ${result.customer.city}${result.customer.postal_code ? ' ' + result.customer.postal_code : ''}`
+                : '',
+            }));
+          }
+        } catch (err) {
+          console.error('Failed to fetch customer data:', err);
+        }
+      } else if (session?.user) {
+        // If logged in but no customer_id yet, use session data
+        setFormData(prev => ({
+          ...prev,
+          customer_name: session.user.name || '',
+          customer_email: session.user.email || '',
+          customer_phone: session.user.customer_phone || '',
+        }));
+      }
+    };
+
+    fetchCustomerData();
+  }, [customerId, session]);
 
   useEffect(() => {
     if (cart.items.length === 0) {
@@ -111,11 +152,12 @@ export default function CheckoutPage() {
       const deliveryWindowStart = new Date(deliveryDateTime.getTime() - 30 * 60000); // -30 min
       const deliveryWindowEnd = new Date(deliveryDateTime.getTime() + 30 * 60000); // +30 min
 
-      // Create order
+      // Create order with customer_id from session if available
       const response = await fetch('/api/orders/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          customer_id: customerId || undefined, // Use session customer_id if available
           customer_name: formData.customer_name,
           customer_phone: formData.customer_phone,
           customer_email: formData.customer_email,
@@ -142,6 +184,11 @@ export default function CheckoutPage() {
 
       if (!result.success) {
         throw new Error(result.error);
+      }
+
+      // Save customer ID for order tracking (backward compatibility for guests)
+      if (result.order.customer_id && !session?.user?.customer_id) {
+        localStorage.setItem('customer_id', result.order.customer_id);
       }
 
       // Clear cart and redirect to success page
@@ -430,6 +477,9 @@ export default function CheckoutPage() {
           </div>
         </form>
       </div>
+
+      {/* Order Status Tracker */}
+      <OrderStatusTracker customerId={customerId || undefined} />
     </div>
   );
 }

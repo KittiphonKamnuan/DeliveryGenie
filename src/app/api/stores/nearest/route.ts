@@ -67,8 +67,21 @@ export async function POST(request: NextRequest) {
       storesData = lambdaResponse;
     }
 
-    // Get stores from the response (raw Lambda format)
-    const stores: any[] = storesData.top_10_nearest || storesData.all_stores || storesData.stores || [];
+    // Get stores from the response - handle both array and single store formats
+    let stores: any[] = [];
+
+    if (storesData.nearest_store) {
+      // Single store format from new backend
+      stores = [storesData.nearest_store];
+    } else if (storesData.top_10_nearest) {
+      // Array format
+      stores = storesData.top_10_nearest;
+    } else if (storesData.all_stores) {
+      stores = storesData.all_stores;
+    } else if (storesData.stores) {
+      stores = storesData.stores;
+    }
+
     console.log('Extracted stores count:', stores.length);
     console.log('First store:', JSON.stringify(stores[0], null, 2));
 
@@ -80,7 +93,8 @@ export async function POST(request: NextRequest) {
       address: store.address || 'ไม่ระบุที่อยู่',
       latitude: store.lat,
       longitude: store.lon,
-      distance_km: store.distance,
+      distance_km: store.distance_km || store.distance || 0,
+      route_duration_min: store.duration_min,
     }));
     console.log('Mapped stores count:', mappedStores.length);
     console.log('First mapped store:', JSON.stringify(mappedStores[0], null, 2));

@@ -41,17 +41,22 @@ export default function Navigation() {
                 )}
                 <span className="font-semibold">{session.user.name}</span>
               </div>
-              <p className="text-xs text-green-100">{session.user.email}</p>
+              <p className="text-xs text-green-100">
+                {session.user.role === 'customer' ? session.user.customer_phone : session.user.email}
+              </p>
               <p className="text-xs text-green-200 mt-1">
-                {session.user.role === 'admin' ? '🔑 ผู้ดูแลระบบ' : '👤 ผู้ใช้งาน'}
+                {session.user.role === 'admin' && '🔑 ผู้ดูแลระบบ'}
+                {session.user.role === 'customer' && '🛒 ลูกค้า'}
+                {session.user.role === 'rider' && '🚚 ไรเดอร์'}
+                {!['admin', 'customer', 'rider'].includes(session.user.role) && '👤 ผู้ใช้งาน'}
               </p>
             </div>
           )}
 
           {/* Menu Items */}
           <div className="py-2">
-            {/* User Role - Shopping Only */}
-            {session?.user?.role === 'user' && (
+            {/* Customer Role - Shopping Only */}
+            {session?.user?.role === 'customer' && (
               <>
                 <div className="px-4 py-1 text-xs font-semibold text-gray-500 uppercase">
                   Shopping
@@ -69,6 +74,22 @@ export default function Navigation() {
                   onClick={() => setMenuOpen(false)}
                 >
                   🛍️ ตะกร้าสินค้า
+                </Link>
+              </>
+            )}
+
+            {/* Rider Role - Delivery Dashboard */}
+            {session?.user?.role === 'rider' && (
+              <>
+                <div className="px-4 py-1 text-xs font-semibold text-gray-500 uppercase">
+                  Delivery
+                </div>
+                <Link
+                  href="/rider"
+                  className="block px-4 py-2 hover:bg-gray-100 transition-colors text-blue-600 font-medium"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  🚚 งานส่งของฉัน
                 </Link>
               </>
             )}
@@ -156,15 +177,26 @@ export default function Navigation() {
             )}
           </div>
 
-          {/* Logout Button */}
+          {/* Login/Logout Button */}
           <div className="border-t border-gray-200">
-            <button
-              onClick={handleLogout}
-              className="w-full px-4 py-3 text-left hover:bg-red-50 transition-colors flex items-center gap-2 text-red-600 font-medium"
-            >
-              <LogOut className="w-4 h-4" />
-              ออกจากระบบ
-            </button>
+            {session?.user ? (
+              <button
+                onClick={handleLogout}
+                className="w-full px-4 py-3 text-left hover:bg-red-50 transition-colors flex items-center gap-2 text-red-600 font-medium"
+              >
+                <LogOut className="w-4 h-4" />
+                ออกจากระบบ
+              </button>
+            ) : (
+              <Link
+                href="/customer/login"
+                className="block px-4 py-3 hover:bg-green-50 transition-colors text-seven-green font-medium"
+                onClick={() => setMenuOpen(false)}
+              >
+                <User className="w-4 h-4 inline mr-2" />
+                เข้าสู่ระบบ / สมัครสมาชิก
+              </Link>
+            )}
           </div>
         </div>
       )}

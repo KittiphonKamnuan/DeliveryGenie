@@ -1,8 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MapPin, Package, Navigation, CheckCircle, Clock, Truck, AlertCircle } from 'lucide-react';
-import { Button, Card, LoadingSpinner } from '@/components';
+import { MapPin, Package, Navigation, CheckCircle, Clock, Truck, AlertCircle, User, Map, Zap, List } from 'lucide-react';
+import { Button, Card, LoadingSpinner, RiderMap } from '@/components';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
+
+// Dynamically import RiderMap to avoid SSR issues with Leaflet
+const DynamicRiderMap = dynamic(() => import('@/components/RiderMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="bg-gray-100 rounded-lg p-12 text-center">
+      <LoadingSpinner size="lg" message="กำลังโหลดแผนที่..." />
+    </div>
+  ),
+});
 
 interface Delivery {
   delivery_id: string;
@@ -19,6 +31,7 @@ interface Delivery {
   customer_phone: string;
   estimated_distance_km: number;
   priority_class: string;
+  priority_score?: number; // Add priority score
   created_at: string;
 }
 
@@ -40,6 +53,9 @@ export default function RiderDashboard() {
   const [loading, setLoading] = useState(true);
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{lat: number, lon: number} | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const [autoMode, setAutoMode] = useState(false);
+  const [deliveryQueue, setDeliveryQueue] = useState<Delivery[]>([]);
 
   // Mock driver ID - ในระบบจริงจะมาจาก authentication
   const DRIVER_ID = '11fef86d-2900-4152-a48a-0c0e55b532ba';
@@ -70,13 +86,37 @@ export default function RiderDashboard() {
     }
   };
 
-  // Fetch available jobs
+  // Fetch available jobs with priority scores
   const fetchAvailableJobs = async () => {
     try {
-      const response = await fetch('/api/deliveries?status=pending&limit=10');
+      // Use orders API to get priority scores
+      const response = await fetch('/api/orders?status=pending&limit=10');
       if (response.ok) {
         const data = await response.json();
-        setAvailableJobs(data.deliveries || []);
+
+        if (data.success && data.data) {
+          // Transform orders to delivery format with priority scores
+          const jobsWithPriority = data.data.map((order: any) => ({
+            delivery_id: order.order_id,
+            order_id: order.order_id,
+            order_number: order.order_number,
+            delivery_status: 'pending',
+            pickup_location: '7-Eleven (ร้านที่ใกล้ที่สุด)',
+            pickup_lat: 13.7428,
+            pickup_lon: 100.5650,
+            delivery_location: order.customer_address,
+            delivery_lat: order.delivery_latitude ? parseFloat(order.delivery_latitude.toString()) : 0,
+            delivery_lon: order.delivery_longitude ? parseFloat(order.delivery_longitude.toString()) : 0,
+            customer_name: order.customer_name,
+            customer_phone: '',
+            estimated_distance_km: 5, // TODO: Calculate actual distance
+            priority_class: order.priority_class,
+            priority_score: order.priority_score,
+            created_at: order.order_time,
+          }));
+
+          setAvailableJobs(jobsWithPriority);
+        }
       }
     } catch (error) {
       console.error('Error fetching available jobs:', error);
@@ -187,12 +227,64 @@ export default function RiderDashboard() {
     window.open(url, '_blank');
   };
 
+  // Toggle Auto Mode - จัดเรียงตาม Priority
+  const toggleAutoMode = () => {
+    if (!autoMode) {
+      // เปิด Auto mode - เรียงตาม priority score
+      const sorted = [...activeDeliveries, ...availableJobs].sort((a, b) => {
+        return (b.priority_score || 0) - (a.priority_score || 0);
+      });
+      setDeliveryQueue(sorted);
+      setAutoMode(true);
+    } else {
+      // ปิด Auto mode - ให้ rider เลือกเอง
+      setDeliveryQueue([]);
+      setAutoMode(false);
+    }
+  };
+
+  // เพิ่มจุดส่งเข้า queue (สำหรับ manual mode)
+  const addToQueue = (delivery: Delivery) => {
+    if (!deliveryQueue.find(d => d.delivery_id === delivery.delivery_id)) {
+      setDeliveryQueue([...deliveryQueue, delivery]);
+    }
+  };
+
+  // ลบจุดส่งออกจาก queue
+  const removeFromQueue = (deliveryId: string) => {
+    setDeliveryQueue(deliveryQueue.filter(d => d.delivery_id !== deliveryId));
+  };
+
+  // เปลี่ยนลำดับในqueue
+  const moveInQueue = (deliveryId: string, direction: 'up' | 'down') => {
+    const index = deliveryQueue.findIndex(d => d.delivery_id === deliveryId);
+    if (index === -1) return;
+
+    const newQueue = [...deliveryQueue];
+    if (direction === 'up' && index > 0) {
+      [newQueue[index], newQueue[index - 1]] = [newQueue[index - 1], newQueue[index]];
+    } else if (direction === 'down' && index < newQueue.length - 1) {
+      [newQueue[index], newQueue[index + 1]] = [newQueue[index + 1], newQueue[index]];
+    }
+    setDeliveryQueue(newQueue);
+  };
+
   useEffect(() => {
     fetchDriverInfo();
     fetchActiveDeliveries();
     fetchAvailableJobs();
     requestLocation();
   }, []);
+
+  // Auto-update queue when auto mode is on
+  useEffect(() => {
+    if (autoMode) {
+      const sorted = [...activeDeliveries, ...availableJobs].sort((a, b) => {
+        return (b.priority_score || 0) - (a.priority_score || 0);
+      });
+      setDeliveryQueue(sorted);
+    }
+  }, [activeDeliveries, availableJobs, autoMode]);
 
   const getPriorityColor = (priorityClass: string) => {
     switch (priorityClass) {
@@ -223,38 +315,170 @@ export default function RiderDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-seven-green text-white p-6 shadow-lg">
+        {/* Header */}
+        <div className="bg-seven-green text-white p-6 shadow-lg">
         <div className="container mx-auto">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold mb-1">🚚 Rider Dashboard</h1>
               <p className="text-white/80">สวัสดี, {driverInfo?.name || 'คนขับ'}</p>
             </div>
-            <div className="text-right">
-              <div className="flex items-center gap-2 mb-1">
-                {locationEnabled ? (
-                  <><MapPin className="w-5 h-5" /> <span>ตำแหน่งเปิดอยู่</span></>
-                ) : (
-                  <><AlertCircle className="w-5 h-5" /> <span>ตำแหน่งปิด</span></>
-                )}
+            <div className="flex items-center gap-6">
+              <div className="text-right">
+                <div className="flex items-center gap-2 mb-1">
+                  {locationEnabled ? (
+                    <><MapPin className="w-5 h-5" /> <span>ตำแหน่งเปิดอยู่</span></>
+                  ) : (
+                    <><AlertCircle className="w-5 h-5" /> <span>ตำแหน่งปิด</span></>
+                  )}
+                </div>
+                <div className="text-sm text-white/80">
+                  ⭐ คะแนน: {driverInfo?.rating.toFixed(1)} | จัดส่งสำเร็จ: {driverInfo?.total_deliveries}
+                </div>
               </div>
-              <div className="text-sm text-white/80">
-                ⭐ คะแนน: {driverInfo?.rating.toFixed(1)} | จัดส่งสำเร็จ: {driverInfo?.total_deliveries}
-              </div>
+              <Link href="/rider/account">
+                <button className="bg-white/20 hover:bg-white/30 p-3 rounded-full transition">
+                  <User className="w-6 h-6" />
+                </button>
+              </Link>
             </div>
           </div>
         </div>
       </div>
 
       <div className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Active Deliveries */}
-          <Card title="📦 งานที่กำลังทำ" className="h-fit">
-            {activeDeliveries.length === 0 ? (
-              <div className="text-center py-10 text-gray-500">
-                <Package className="w-16 h-16 mx-auto mb-3 text-gray-300" />
-                <p>ยังไม่มีงานที่กำลังทำ</p>
+        {/* View Mode Toggle & Auto Mode */}
+        <div className="bg-white rounded-xl shadow-md p-4 mb-6">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
+                  viewMode === 'list' ? 'bg-seven-green text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <List className="w-5 h-5" />
+                รายการ
+              </button>
+              <button
+                onClick={() => setViewMode('map')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
+                  viewMode === 'map' ? 'bg-seven-green text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <Map className="w-5 h-5" />
+                แผนที่
+              </button>
+            </div>
+
+            <button
+              onClick={toggleAutoMode}
+              className={`flex items-center gap-2 px-6 py-2 rounded-lg font-bold transition ${
+                autoMode ? 'bg-purple-600 text-white shadow-lg' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              <Zap className="w-5 h-5" />
+              {autoMode ? '🤖 Auto Mode (ON)' : 'Auto Mode (OFF)'}
+            </button>
+          </div>
+
+          {autoMode && (
+            <div className="mt-4 p-3 bg-purple-50 border-l-4 border-purple-500 rounded">
+              <p className="text-sm text-purple-800">
+                <strong>Auto Mode เปิดอยู่:</strong> ระบบจะจัดลำดับการส่งตาม Priority Score โดยอัตโนมัติ (คะแนนสูง = ความสำคัญสูง)
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Delivery Queue Section */}
+        {deliveryQueue.length > 0 && (
+          <Card title={`📍 คิวการจัดส่ง (${deliveryQueue.length} จุด)`} className="mb-6">
+            <div className="space-y-3">
+              {deliveryQueue.map((delivery, index) => (
+                <div key={delivery.delivery_id} className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                  <div className={`flex-shrink-0 w-10 h-10 rounded-full ${getPriorityColor(delivery.priority_class)} text-white flex items-center justify-center font-bold text-lg`}>
+                    {index + 1}
+                  </div>
+
+                  <div className="flex-1">
+                    <div className="font-bold text-gray-800">{delivery.order_number}</div>
+                    <div className="text-sm text-gray-600">{delivery.customer_name}</div>
+                    <div className="text-xs text-gray-500 mt-1">{delivery.delivery_location}</div>
+                  </div>
+
+                  <div className="text-right">
+                    <span className={`${getPriorityColor(delivery.priority_class)} text-white px-2 py-1 rounded text-xs font-bold uppercase block mb-1`}>
+                      {delivery.priority_class}
+                    </span>
+                    {delivery.priority_score && (
+                      <div className="text-xs font-medium text-gray-600">
+                        Score: {delivery.priority_score.toFixed(1)}
+                      </div>
+                    )}
+                  </div>
+
+                  {!autoMode && (
+                    <div className="flex flex-col gap-1">
+                      <button
+                        onClick={() => moveInQueue(delivery.delivery_id, 'up')}
+                        disabled={index === 0}
+                        className="p-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        onClick={() => moveInQueue(delivery.delivery_id, 'down')}
+                        disabled={index === deliveryQueue.length - 1}
+                        className="p-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        ▼
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => removeFromQueue(delivery.delivery_id)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded"
+                  >
+                    ✕
+                  </button>
+
+                  <button
+                    onClick={() => navigateToDestination(delivery.delivery_lat, delivery.delivery_lon)}
+                    className="p-2 bg-seven-green text-white rounded hover:bg-green-700"
+                  >
+                    <Navigation className="w-5 h-5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {viewMode === 'map' && (
+          <Card title="🗺️ แผนที่จุดส่ง" className="mb-6">
+            <DynamicRiderMap
+              deliveries={[...activeDeliveries, ...availableJobs]}
+              currentLocation={currentLocation || undefined}
+              onLocationSelect={(deliveryId) => {
+                const delivery = [...activeDeliveries, ...availableJobs].find(d => d.delivery_id === deliveryId);
+                if (delivery) {
+                  setSelectedDelivery(delivery);
+                }
+              }}
+            />
+          </Card>
+        )}
+
+        {viewMode === 'list' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Active Deliveries */}
+            <Card title="📦 งานที่กำลังทำ" className="h-fit">
+              {activeDeliveries.length === 0 ? (
+                <div className="text-center py-10 text-gray-500">
+                  <Package className="w-16 h-16 mx-auto mb-3 text-gray-300" />
+                  <p>ยังไม่มีงานที่กำลังทำ</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -308,7 +532,7 @@ export default function RiderDashboard() {
                       {delivery.delivery_status === 'in_transit' && (
                         <Button
                           onClick={() => completeDelivery(delivery)}
-                          variant="success"
+                          variant="primary"
                           size="sm"
                           fullWidth
                         >
@@ -330,8 +554,8 @@ export default function RiderDashboard() {
             )}
           </Card>
 
-          {/* Available Jobs */}
-          <Card title="🆕 งานใหม่ที่พร้อมรับ" className="h-fit">
+            {/* Available Jobs */}
+            <Card title="🆕 งานใหม่ที่พร้อมรับ" className="h-fit">
             {availableJobs.length === 0 ? (
               <div className="text-center py-10 text-gray-500">
                 <Clock className="w-16 h-16 mx-auto mb-3 text-gray-300" />
@@ -346,9 +570,16 @@ export default function RiderDashboard() {
                         <div className="font-bold text-lg">{job.order_number}</div>
                         <div className="text-sm text-gray-500">{job.customer_name}</div>
                       </div>
-                      <span className={`${getPriorityColor(job.priority_class)} text-white px-3 py-1 rounded-full text-xs font-bold uppercase`}>
-                        {job.priority_class}
-                      </span>
+                      <div className="text-right">
+                        <span className={`${getPriorityColor(job.priority_class)} text-white px-3 py-1 rounded-full text-xs font-bold uppercase block mb-1`}>
+                          {job.priority_class}
+                        </span>
+                        {job.priority_score && (
+                          <div className="text-xs text-gray-600">
+                            คะแนน: {job.priority_score.toFixed(1)}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="space-y-2 text-sm mb-4">
@@ -365,20 +596,38 @@ export default function RiderDashboard() {
                       </div>
                     </div>
 
-                    <Button
-                      onClick={() => setSelectedDelivery(job)}
-                      variant="primary"
-                      size="sm"
-                      fullWidth
-                    >
-                      ดูรายละเอียด
-                    </Button>
+                    <div className="flex gap-2">
+                      {!autoMode && !deliveryQueue.find(d => d.delivery_id === job.delivery_id) && (
+                        <Button
+                          onClick={() => addToQueue(job)}
+                          variant="secondary"
+                          size="sm"
+                          fullWidth
+                        >
+                          + เพิ่มเข้าคิว
+                        </Button>
+                      )}
+                      {deliveryQueue.find(d => d.delivery_id === job.delivery_id) && (
+                        <div className="flex-1 bg-green-100 text-green-700 py-2 px-3 rounded text-sm text-center font-medium">
+                          ✓ อยู่ในคิวแล้ว
+                        </div>
+                      )}
+                      <Button
+                        onClick={() => setSelectedDelivery(job)}
+                        variant="primary"
+                        size="sm"
+                        fullWidth={autoMode || deliveryQueue.find(d => d.delivery_id === job.delivery_id) ? true : false}
+                      >
+                        ดูรายละเอียด
+                      </Button>
+                    </div>
                   </div>
                 ))}
-              </div>
-            )}
-          </Card>
-        </div>
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
       </div>
 
       {/* Job Detail Modal */}

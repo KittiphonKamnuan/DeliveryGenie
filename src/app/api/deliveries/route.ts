@@ -31,8 +31,7 @@ export async function GET(request: NextRequest) {
       include: {
         orders: {
           include: {
-            customers: true,
-            stores: true
+            customers: true
           }
         },
         drivers: true
@@ -49,7 +48,7 @@ export async function GET(request: NextRequest) {
       order_id: delivery.order_id,
       order_number: delivery.orders?.order_number || 'N/A',
       delivery_status: delivery.delivery_status,
-      pickup_location: delivery.pickup_location || delivery.orders?.stores?.address || '',
+      pickup_location: delivery.pickup_location || '',
       pickup_lat: delivery.pickup_latitude ? parseFloat(delivery.pickup_latitude.toString()) : 0,
       pickup_lon: delivery.pickup_longitude ? parseFloat(delivery.pickup_longitude.toString()) : 0,
       delivery_location: delivery.delivery_location || '',
@@ -58,7 +57,8 @@ export async function GET(request: NextRequest) {
       customer_name: delivery.orders?.customers?.name || 'Unknown',
       customer_phone: delivery.orders?.customers?.phone || '',
       estimated_distance_km: delivery.estimated_distance_km ? parseFloat(delivery.estimated_distance_km.toString()) : 0,
-      priority_class: delivery.orders?.priority_level || 'medium',
+      priority_class: delivery.orders?.priority_class || 'medium',
+      priority_score: delivery.orders?.priority_score || 0,
       created_at: delivery.created_at,
       driver_name: delivery.drivers ? `${delivery.drivers.first_name} ${delivery.drivers.last_name}` : null
     }));

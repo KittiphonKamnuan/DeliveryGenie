@@ -1,13 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ShoppingCart, Plus, Minus, Trash2, ArrowLeft, ArrowRight } from 'lucide-react';
-import { Header, Button } from '@/components';
+import { Header, Button, OrderStatusTracker } from '@/components';
 import { useCart } from '@/contexts/CartContext';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 export default function CartPage() {
+  const [customerId, setCustomerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const storedCustomerId = localStorage.getItem('customer_id');
+    if (storedCustomerId) {
+      setCustomerId(storedCustomerId);
+    }
+  }, []);
   const router = useRouter();
   const { cart, updateQuantity, removeFromCart } = useCart();
 
@@ -172,6 +180,9 @@ export default function CartPage() {
           </div>
         </div>
       </div>
+
+      {/* Order Status Tracker */}
+      <OrderStatusTracker customerId={customerId || undefined} />
     </div>
   );
 }

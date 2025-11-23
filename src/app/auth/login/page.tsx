@@ -27,7 +27,18 @@ export default function LoginPage() {
       if (result?.error) {
         setError(result.error);
       } else if (result?.ok) {
-        router.push('/');
+        // Fetch session to get user role
+        const sessionResponse = await fetch('/api/auth/session');
+        const session = await sessionResponse.json();
+
+        // Role-based redirect
+        if (session?.user?.role === 'admin') {
+          router.push('/admin');
+        } else if (session?.user?.role === 'rider') {
+          router.push('/rider');
+        } else {
+          router.push('/'); // Customer goes to shop
+        }
         router.refresh();
       }
     } catch (err) {
@@ -112,17 +123,20 @@ export default function LoginPage() {
         <div className="mt-8 pt-6 border-t border-gray-200">
           <p className="text-sm text-gray-600 text-center mb-3 font-semibold">บัญชีทดสอบ:</p>
           <div className="space-y-2 text-xs bg-gray-50 rounded-lg p-4">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Admin:</span>
-              <span className="font-mono bg-white px-2 py-1 rounded border">admin@deliverygenie.com</span>
+            <div>
+              <span className="text-gray-600 font-semibold">Admin:</span>
+              <div className="mt-1 font-mono bg-white px-2 py-1 rounded border text-xs">
+                admin@deliverygenie.com / admin123
+              </div>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">User:</span>
-              <span className="font-mono bg-white px-2 py-1 rounded border">user@deliverygenie.com</span>
+            <div>
+              <span className="text-gray-600 font-semibold">Rider:</span>
+              <div className="mt-1 font-mono bg-white px-2 py-1 rounded border text-xs">
+                rider1@deliverygenie.com / password123
+              </div>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Password:</span>
-              <span className="font-mono bg-white px-2 py-1 rounded border">admin123 / user123</span>
+            <div className="text-gray-500 text-center mt-2">
+              ลูกค้า: ไม่ต้อง login
             </div>
           </div>
         </div>

@@ -13,10 +13,7 @@ export async function GET(
     const driverId = params.id;
 
     const driver = await prisma.drivers.findUnique({
-      where: { id: driverId },
-      include: {
-        vehicles: true
-      }
+      where: { id: driverId }
     });
 
     if (!driver) {
@@ -24,6 +21,14 @@ export async function GET(
         { success: false, error: 'Driver not found' },
         { status: 404 }
       );
+    }
+
+    // Get vehicle info if driver has one assigned
+    let vehicle = null;
+    if (driver.current_vehicle_id) {
+      vehicle = await prisma.vehicles.findUnique({
+        where: { id: driver.current_vehicle_id }
+      });
     }
 
     // Transform data for frontend
@@ -35,12 +40,12 @@ export async function GET(
       current_vehicle_id: driver.current_vehicle_id,
       total_deliveries: driver.total_deliveries || 0,
       rating: driver.rating ? parseFloat(driver.rating.toString()) : 0,
-      vehicle: driver.vehicles ? {
-        vehicle_id: driver.vehicles.id,
-        vehicle_type: driver.vehicles.vehicle_type,
-        license_plate: driver.vehicles.license_plate,
-        capacity_weight_kg: driver.vehicles.capacity_weight_kg,
-        capacity_volume_m3: driver.vehicles.capacity_volume_m3
+      vehicle: vehicle ? {
+        vehicle_id: vehicle.id,
+        vehicle_type: vehicle.vehicle_type,
+        license_plate: vehicle.license_plate,
+        capacity_weight_kg: vehicle.capacity_weight_kg,
+        capacity_volume_m3: vehicle.capacity_volume_m3
       } : null
     };
 

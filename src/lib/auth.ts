@@ -5,7 +5,7 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
-import { prisma } from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 
 export const authOptions: NextAuthOptions = {
@@ -14,16 +14,20 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: 'Credentials',
       credentials: {
-        email: { label: 'Email', type: 'email', placeholder: 'user@example.com' },
+        email: { label: 'Email', type: 'text', placeholder: 'user@example.com or phone' },
+        phone: { label: 'Phone', type: 'tel', placeholder: '0812345678' },
         password: { label: 'Password', type: 'password' }
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error('กรุณากรอกอีเมลและรหัสผ่าน');
+        if ((!credentials?.email && !credentials?.phone) || !credentials?.password) {
+          throw new Error('กรุณากรอกข้อมูลและรหัสผ่าน');
         }
 
-        const user = await prisma.users.findUnique({
-          where: { email: credentials.email }
+        // Support both email and phone login
+        const identifier = credentials.phone || credentials.email;
+
+        const user = await prisma.users.findFirst({
+          where: { email: identifier }
         });
 
         if (!user) {
@@ -66,6 +70,27 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
         token.role = user.role;
+
+        // If user is a customer, fetch customer_id from customers table
+        if (user.role === 'customer') {
+          const customer = await prisma.customers.findFirst({
+            where: { phone: user.email } // email field stores phone for customers
+          });
+          if (customer) {
+            token.customer_id = customer.id;
+            token.customer_phone = customer.phone;
+          }
+        }
+
+        // If user is a driver, fetch driver_id from drivers table
+        if (user.role === 'rider') {
+          const driver = await prisma.drivers.findFirst({
+            where: { phone: user.email }
+          });
+          if (driver) {
+            token.driver_id = driver.id;
+          }
+        }
       }
       return token;
     },
@@ -73,6 +98,17 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
+
+        // Add customer_id to session for customer users
+        if (token.customer_id) {
+          session.user.customer_id = token.customer_id as string;
+          session.user.customer_phone = token.customer_phone as string;
+        }
+
+        // Add driver_id to session for rider users
+        if (token.driver_id) {
+          session.user.driver_id = token.driver_id as string;
+        }
       }
       return session;
     }

@@ -1,20 +1,34 @@
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { CheckCircle, Package, ArrowLeft } from 'lucide-react';
-import { Header, Button, LoadingSpinner } from '@/components';
+import { Header, Button, LoadingSpinner, OrderStatusTracker } from '@/components';
 import Link from 'next/link';
 
 function OrderSuccessContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const orderId = searchParams.get('order_id');
   const [loading, setLoading] = useState(true);
+  const [customerId, setCustomerId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate loading
-    setTimeout(() => setLoading(false), 1000);
-  }, []);
+    // Get customer ID from localStorage
+    const storedCustomerId = localStorage.getItem('customer_id');
+    if (storedCustomerId) {
+      setCustomerId(storedCustomerId);
+    }
+
+    // Simulate loading then redirect to homepage after 3 seconds
+    setTimeout(() => {
+      setLoading(false);
+      // Auto redirect to homepage after showing success message
+      setTimeout(() => {
+        router.push('/');
+      }, 3000);
+    }, 1000);
+  }, [router]);
 
   if (loading) {
     return (
@@ -116,11 +130,14 @@ function OrderSuccessContent() {
           {/* Info Box */}
           <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-4 mt-6">
             <p className="text-sm text-blue-800">
-              💡 <strong>คำแนะนำ:</strong> คุณสามารถติดตามสถานะคำสั่งซื้อได้ในหน้า Dashboard
+              💡 <strong>คำแนะนำ:</strong> กำลังนำคุณกลับหน้าหลักเพื่อติดตามสถานะการจัดส่ง...
             </p>
           </div>
         </div>
       </div>
+
+      {/* Order Status Tracker */}
+      <OrderStatusTracker customerId={customerId || undefined} />
     </div>
   );
 }
