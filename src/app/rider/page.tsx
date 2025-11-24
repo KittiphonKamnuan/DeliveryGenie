@@ -1,22 +1,35 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MapPin, Package, Navigation, CheckCircle, Clock, Truck, AlertCircle, User, Map, Zap, List } from 'lucide-react';
-import { Button, Card, LoadingSpinner, RiderMap } from '@/components';
+import { MapPin, Package, Navigation, CheckCircle, Clock, Truck, AlertCircle, User, Map, Zap, List, X, ChevronLeft } from 'lucide-react';
+import { Button, Card, LoadingSpinner } from '@/components';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useSession } from 'next-auth/react'; // Import Session
 
-// Dynamically import RiderMap to avoid SSR issues with Leaflet
+// --- Dynamic Imports ---
+
+// 1. แผนที่รวม (Dashboard)
 const DynamicRiderMap = dynamic(() => import('@/components/RiderMap'), {
   ssr: false,
   loading: () => (
-    <div className="bg-gray-100 rounded-lg p-12 text-center">
-      <LoadingSpinner size="lg" message="กำลังโหลดแผนที่..." />
+    <div className="h-64 bg-gray-100 animate-pulse rounded-lg flex items-center justify-center text-gray-400">
+      กำลังโหลดแผนที่รวม...
     </div>
   ),
 });
 
+// 2. 🔥 แผนที่นำทาง (In-App Navigation)
+const NavigationMap = dynamic(() => import('@/components/NavigationMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full bg-gray-100 animate-pulse flex items-center justify-center text-gray-500">
+      <Navigation className="w-8 h-8 animate-spin mr-2" /> กำลังคำนวณเส้นทาง...
+    </div>
+  ),
+});
+
+// --- Interfaces ---
 interface Delivery {
   delivery_id: string;
   order_id: string;
@@ -163,12 +176,11 @@ export default function RiderDashboard() {
             lon: position.coords.longitude
           });
           setLocationEnabled(true);
-          // Start tracking
           startGPSTracking();
         },
         (error) => {
           console.error('Location error:', error);
-          // ไม่ alert รบกวนทุกครั้ง แต่แสดงสถานะใน UI แทน
+          alert('กรุณาเปิดใช้งานตำแหน่งเพื่อใช้งานระบบนำทาง');
         }
       );
     }
@@ -190,7 +202,6 @@ export default function RiderDashboard() {
               timestamp: new Date().toISOString()
             };
 
-            // Send to Lambda tracking endpoint
             try {
               await fetch(process.env.NEXT_PUBLIC_LAMBDA_TRACKING_URL || '/api/tracking', {
                 method: 'POST',
@@ -250,10 +261,16 @@ export default function RiderDashboard() {
     }
   };
 
-  // Navigate to destination
-  const navigateToDestination = (lat: number, lon: number) => {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
-    window.open(url, '_blank');
+  // 🔥 ฟังก์ชันใหม่: เริ่มการนำทางในแอป (เปิด Overlay)
+  const startInAppNavigation = (delivery: Delivery) => {
+    if (!currentLocation) {
+      alert('กรุณาเปิดใช้งานตำแหน่งของคุณก่อนเริ่มนำทาง');
+      requestLocation();
+      return;
+    }
+    setNavigationTarget(delivery);
+    // ปิด Modal รายละเอียดงานถ้าเปิดอยู่ เพื่อให้เห็นแผนที่เต็มจอ
+    setSelectedDelivery(null); 
   };
 
   // Toggle Auto Mode
@@ -270,7 +287,6 @@ export default function RiderDashboard() {
     }
   };
 
-  // Queue Management
   const addToQueue = (delivery: Delivery) => {
     if (!deliveryQueue.find(d => d.delivery_id === delivery.delivery_id)) {
       setDeliveryQueue([...deliveryQueue, delivery]);
@@ -353,7 +369,7 @@ export default function RiderDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-20">
         {/* Header */}
         <div className="bg-seven-green text-white p-6 shadow-lg sticky top-0 z-30">
         <div className="container mx-auto">
@@ -447,8 +463,19 @@ export default function RiderDashboard() {
                     </div>
                   )}
 
-                  <button onClick={() => navigateToDestination(delivery.delivery_lat, delivery.delivery_lon)} className="p-2 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200">
-                    <Navigation className="w-4 h-4" />
+                  <button
+                    onClick={() => removeFromQueue(delivery.delivery_id)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded"
+                  >
+                    ✕
+                  </button>
+
+                  {/* 🔥 ปุ่มนำทางในคิว (ใช้ In-App Navigation) */}
+                  <button
+                    onClick={() => startInAppNavigation(delivery)}
+                    className="p-2 bg-seven-green text-white rounded hover:bg-green-700"
+                  >
+                    <Navigation className="w-5 h-5" />
                   </button>
                 </div>
               ))}
@@ -523,8 +550,13 @@ export default function RiderDashboard() {
                           ✅ จัดส่งสำเร็จ
                         </Button>
                       )}
-                      <Button onClick={() => navigateToDestination(delivery.delivery_lat, delivery.delivery_lon)} variant="secondary" size="sm" fullWidth>
-                        🧭 นำทาง
+                      {/* 🔥 ปุ่มนำทางใน List (ใช้ In-App Navigation) */}
+                      <Button
+                        onClick={() => startInAppNavigation(delivery)}
+                        variant="secondary"
+                        size="sm"
+                      >
+                        <Navigation className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>
@@ -639,7 +671,7 @@ export default function RiderDashboard() {
               {/* Action Buttons */}
               <div className="flex gap-3 pt-2">
                 <Button
-                  onClick={() => navigateToDestination(selectedDelivery.delivery_lat, selectedDelivery.delivery_lon)}
+                  onClick={() => startInAppNavigation(selectedDelivery)}
                   variant="secondary"
                   fullWidth
                   className="py-3"
@@ -665,6 +697,62 @@ export default function RiderDashboard() {
           </div>
         </div>
       )}
+
+      {/* 🔥 Overlay: In-App Navigation Map (ส่วนที่เพิ่มมาใหม่) */}
+      {navigationTarget && currentLocation && (
+        <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in slide-in-from-bottom duration-300">
+          {/* Navigation Header */}
+          <div className="bg-blue-600 text-white p-4 shadow-md flex justify-between items-center flex-shrink-0">
+            <div className="flex-1 min-w-0 mr-4">
+              <div className="text-xs opacity-80 mb-1">กำลังนำทางไปที่...</div>
+              <div className="font-bold text-lg truncate">{navigationTarget.delivery_location}</div>
+            </div>
+            <button 
+              onClick={() => setNavigationTarget(null)} 
+              className="bg-white/20 hover:bg-white/30 p-2 rounded-full text-sm font-bold px-4 whitespace-nowrap transition border border-white/30"
+            >
+              จบการนำทาง
+            </button>
+          </div>
+
+          {/* Navigation Map Area */}
+          <div className="flex-1 relative bg-gray-100">
+            <NavigationMap 
+                startLat={currentLocation.lat} 
+                startLon={currentLocation.lon} 
+                endLat={navigationTarget.delivery_lat} 
+                endLon={navigationTarget.delivery_lon} 
+            />
+          </div>
+
+          {/* Bottom Action Panel */}
+          <div className="p-4 bg-white border-t shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] flex-shrink-0 pb-8">
+             <div className="flex items-center justify-between mb-4">
+                <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Order No.</p>
+                    <p className="font-bold text-xl text-gray-800">{navigationTarget.order_number}</p>
+                </div>
+                <div className="text-right">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Customer</p>
+                    <p className="font-bold text-xl text-gray-800">{navigationTarget.customer_name}</p>
+                </div>
+             </div>
+             <Button 
+                fullWidth 
+                variant="primary" 
+                size="lg" 
+                className="h-14 text-lg font-bold shadow-lg shadow-green-500/30 flex items-center justify-center"
+                onClick={() => {
+                    completeDelivery(navigationTarget);
+                    setNavigationTarget(null);
+                }}
+            >
+                <CheckCircle className="w-6 h-6 mr-2" /> ถึงจุดหมาย / จัดส่งสำเร็จ
+             </Button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
