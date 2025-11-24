@@ -146,15 +146,28 @@ model drivers {
   rating             Float?
   total_deliveries   Int             @default(0)
   on_time_rate       Float?
-  current_vehicle_id String?
+  
+  // Vehicle Relation (1:1) - รถ 1 คัน คนขับ 1 คน
+  current_vehicle_id String?         @unique
+  current_vehicle    vehicles?       @relation(fields: [current_vehicle_id], references: [id])
+
+  store_id           String?   
+  store              stores?   @relation(fields: [store_id], references: [id])
+
   created_at         DateTime        @default(now())
   updated_at         DateTime
+  
   deliveries         deliveries[]
   gps_trackings      gps_trackings[]
+
+  // User Relation (1:1) - User 1 คน เป็น Driver ได้ 1 คน
+  user_id            String          @unique
+  user               users           @relation(fields: [user_id], references: [id])
 
   @@index([employee_id])
   @@index([phone])
   @@index([status])
+  @@index([user_id])
 }
 
 model gps_trackings {
@@ -229,12 +242,16 @@ model orders {
   customers                 customers                   @relation(fields: [customer_id], references: [id])
   priority_calculation_logs priority_calculation_logs[]
 
+  store_id    String 
+  stores      stores   @relation(fields: [store_id], references: [id])
+
   @@index([customer_id])
   @@index([delivery_date])
   @@index([order_number])
   @@index([order_status])
   @@index([priority_class])
   @@index([priority_score])
+  @@index([store_id]) // แนะนำให้เพิ่ม Index เพื่อความเร็วในการค้นหา Order ตามสาขา
 }
 
 model performance_metrics {
@@ -423,6 +440,8 @@ model stores {
   updated_at        DateTime
   routes            routes[]
   store_inventories store_inventories[]
+  drivers           drivers[]
+  orders            orders[]  // ร้านค้า 1 ร้าน มี Order ได้หลายรายการ
 
   @@index([city, district])
   @@index([is_active])
@@ -480,6 +499,8 @@ model users {
   accounts      accounts[]
   sessions      sessions[]
 
+  driver        drivers?
+
   @@index([email])
   @@index([role])
 }
@@ -498,8 +519,12 @@ model vehicles {
   last_maintenance   DateTime?
   created_at         DateTime        @default(now())
   updated_at         DateTime
+  
   deliveries         deliveries[]
   gps_trackings      gps_trackings[]
+  
+  // Relation กลับไปหา Driver
+  current_driver     drivers?
 
   @@index([current_status])
   @@index([vehicle_type])

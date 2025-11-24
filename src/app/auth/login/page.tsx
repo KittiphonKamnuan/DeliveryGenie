@@ -34,7 +34,7 @@ export default function LoginPage() {
         // Role-based redirect
         if (session?.user?.role === 'admin') {
           router.push('/admin');
-        } else if (session?.user?.role === 'rider') {
+        } else if (session?.user?.role === 'driver') {
           router.push('/rider');
         } else {
           router.push('/'); // Customer goes to shop

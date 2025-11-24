@@ -416,9 +416,8 @@ async function main() {
   // ============================================
   console.log('🚗 Seeding Drivers...');
 
-  const drivers = [
+  const driversData = [
     {
-      id: randomUUID(),
       employee_id: 'DRV-001',
       first_name: 'สมชาย',
       last_name: 'ใจดี',
@@ -429,10 +428,8 @@ async function main() {
       rating: 4.8,
       total_deliveries: 1250,
       on_time_rate: 0.92,
-      updated_at: new Date()
     },
     {
-      id: randomUUID(),
       employee_id: 'DRV-002',
       first_name: 'สมหญิง',
       last_name: 'รักงาน',
@@ -443,10 +440,8 @@ async function main() {
       rating: 4.9,
       total_deliveries: 2100,
       on_time_rate: 0.95,
-      updated_at: new Date()
     },
     {
-      id: randomUUID(),
       employee_id: 'DRV-003',
       first_name: 'วิชัย',
       last_name: 'มานะ',
@@ -457,19 +452,53 @@ async function main() {
       rating: 4.7,
       total_deliveries: 890,
       on_time_rate: 0.89,
-      updated_at: new Date()
     }
   ];
 
-  for (const driver of drivers) {
-    await prisma.drivers.upsert({
-      where: { employee_id: driver.employee_id },
+  const driverPassword = await bcrypt.hash('driver123', 10);
+
+  for (const driverData of driversData) {
+    // 1. Create (or find) the User account first
+    const driverUser = await prisma.users.upsert({
+      where: { email: driverData.email },
       update: {},
-      create: driver
+      create: {
+        id: randomUUID(),
+        name: `${driverData.first_name} ${driverData.last_name}`,
+        email: driverData.email,
+        password: driverPassword,
+        role: 'driver', // Ensure your User model supports this role string
+        isActive: true,
+        updated_at: new Date()
+      }
+    });
+
+    // 2. Create the Driver linked to that User
+    await prisma.drivers.upsert({
+      where: { employee_id: driverData.employee_id },
+      update: {},
+      create: {
+        id: randomUUID(),
+        employee_id: driverData.employee_id,
+        first_name: driverData.first_name,
+        last_name: driverData.last_name,
+        phone: driverData.phone,
+        email: driverData.email,
+        license_number: driverData.license_number,
+        license_type: driverData.license_type,
+        rating: driverData.rating,
+        total_deliveries: driverData.total_deliveries,
+        on_time_rate: driverData.on_time_rate,
+        updated_at: new Date(),
+        // LINKING THE USER HERE
+        user: {
+          connect: { id: driverUser.id }
+        }
+      }
     });
   }
 
-  console.log(`✅ Created ${drivers.length} drivers\n`);
+  console.log(`✅ Created ${driversData.length} drivers linked to users\n`);
 
   // ============================================
   // 5. SEED VEHICLES

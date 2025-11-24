@@ -5,6 +5,7 @@ import { MapPin, Package, Navigation, CheckCircle, Clock, Truck, AlertCircle, Us
 import { Button, Card, LoadingSpinner, RiderMap } from '@/components';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
+import { useSession } from 'next-auth/react'; // Import Session
 
 // Dynamically import RiderMap to avoid SSR issues with Leaflet
 const DynamicRiderMap = dynamic(() => import('@/components/RiderMap'), {
@@ -31,7 +32,7 @@ interface Delivery {
   customer_phone: string;
   estimated_distance_km: number;
   priority_class: string;
-  priority_score?: number; // Add priority score
+  priority_score?: number; 
   created_at: string;
 }
 
@@ -43,85 +44,112 @@ interface DriverInfo {
   current_vehicle_id: string;
   total_deliveries: number;
   rating: number;
+  store_name?: string; // เพิ่มชื่อสาขา
 }
 
 export default function RiderDashboard() {
+  const { data: session, status } = useSession();
   const [driverInfo, setDriverInfo] = useState<DriverInfo | null>(null);
   const [activeDeliveries, setActiveDeliveries] = useState<Delivery[]>([]);
   const [availableJobs, setAvailableJobs] = useState<Delivery[]>([]);
   const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
   const [loading, setLoading] = useState(true);
+  const [processingJob, setProcessingJob] = useState(false); // State ตอนกดรับงาน
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{lat: number, lon: number} | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [autoMode, setAutoMode] = useState(false);
   const [deliveryQueue, setDeliveryQueue] = useState<Delivery[]>([]);
 
-  // Mock driver ID - ในระบบจริงจะมาจาก authentication
-  const DRIVER_ID = '11fef86d-2900-4152-a48a-0c0e55b532ba';
+  const accessToken = (session as any)?.accessToken;
+  const DRIVER_ID = (session?.user as any)?.id;
 
-  // Fetch driver info
   const fetchDriverInfo = async () => {
+    if (!DRIVER_ID || !accessToken) return;
     try {
-      const response = await fetch(`/api/drivers/${DRIVER_ID}`);
-      if (response.ok) {
-        const data = await response.json();
+      const res = await fetch(`/api/drivers/${DRIVER_ID}?token=${accessToken}`, {
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const data = await res.json();
         setDriverInfo(data.driver);
       }
-    } catch (error) {
-      console.error('Error fetching driver info:', error);
+    } catch (err) {
+      console.error('Driver info error:', err);
     }
   };
-
-  // Fetch active deliveries
+  
   const fetchActiveDeliveries = async () => {
+    if (!DRIVER_ID || !accessToken) return;
     try {
-      const response = await fetch(`/api/deliveries?driver_id=${DRIVER_ID}&status=assigned,picked_up,in_transit`);
-      if (response.ok) {
-        const data = await response.json();
+      const res = await fetch(
+        `/api/deliveries?driver_id=${DRIVER_ID}&status=assigned,picked_up,in_transit&token=${accessToken}`,
+        { cache: 'no-store' }
+      );
+      if (res.ok) {
+        const data = await res.json();
         setActiveDeliveries(data.deliveries || []);
       }
-    } catch (error) {
-      console.error('Error fetching active deliveries:', error);
+    } catch (err) {
+      console.error('Active deliveries error:', err);
     }
   };
 
-  // Fetch available jobs with priority scores
   const fetchAvailableJobs = async () => {
+    if (!DRIVER_ID || !accessToken) return;
     try {
-      // Use orders API to get priority scores
-      const response = await fetch('/api/orders?status=pending&limit=10');
-      if (response.ok) {
-        const data = await response.json();
-
-        if (data.success && data.data) {
-          // Transform orders to delivery format with priority scores
-          const jobsWithPriority = data.data.map((order: any) => ({
-            delivery_id: order.order_id,
-            order_id: order.order_id,
-            order_number: order.order_number,
-            delivery_status: 'pending',
-            pickup_location: '7-Eleven (ร้านที่ใกล้ที่สุด)',
-            pickup_lat: 13.7428,
-            pickup_lon: 100.5650,
-            delivery_location: order.customer_address,
-            delivery_lat: order.delivery_latitude ? parseFloat(order.delivery_latitude.toString()) : 0,
-            delivery_lon: order.delivery_longitude ? parseFloat(order.delivery_longitude.toString()) : 0,
-            customer_name: order.customer_name,
-            customer_phone: '',
-            estimated_distance_km: 5, // TODO: Calculate actual distance
-            priority_class: order.priority_class,
-            priority_score: order.priority_score,
-            created_at: order.order_time,
-          }));
-
-          setAvailableJobs(jobsWithPriority);
-        }
+      const res = await fetch(`/api/job?limit=10&driver_id=${DRIVER_ID}&token=${accessToken}`);
+      if (!res.ok) {
+        const err = await res.json();
+        console.error('Jobs error:', err);
+        return;
+      }
+      const data = await res.json();
+      setAvailableJobs(data.data || []);  // Handle empty data gracefully
+      if (data.data?.length === 0) {
+        console.log('No jobs available – check driver store or pending orders');
       }
     } catch (error) {
-      console.error('Error fetching available jobs:', error);
+      console.error('Fetch jobs error:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Accept Job Logic
+  const handleAcceptJob = async () => {
+    if (!selectedDelivery || !DRIVER_ID) return;
+    
+    setProcessingJob(true);
+    try {
+      const response = await fetch('/api/jobs/accept', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          driver_id: DRIVER_ID,
+          order_id: selectedDelivery.order_id // ใช้ order_id ในการรับงาน
+        })
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        alert('รับงานสำเร็จ! กรุณารับสินค้าที่ร้าน');
+        setSelectedDelivery(null);
+        // Refresh data
+        fetchAvailableJobs();
+        fetchActiveDeliveries();
+      } else {
+        // Response ไม่สำเร็จ (เช่น 500 จาก Lambda ที่มีการ Assign ซ้ำซ้อน)
+        // result.error จะเป็นข้อความที่มาจาก ValueError ใน Python
+        alert(result.error || `ไม่สามารถรับงานได้ (รหัส: ${response.status})`);
+        fetchAvailableJobs(); // Refresh เพื่อดูว่างานหายไปไหม
+      }
+    } catch (error) {
+      console.error('Error accepting job:', error);
+      alert('เกิดข้อผิดพลาดในการเชื่อมต่อหรือการประมวลผล');
+    } finally {
+      setProcessingJob(false);
     }
   };
 
@@ -140,7 +168,7 @@ export default function RiderDashboard() {
         },
         (error) => {
           console.error('Location error:', error);
-          alert('กรุณาเปิดใช้งานตำแหน่งเพื่อใช้งานระบบ');
+          // ไม่ alert รบกวนทุกครั้ง แต่แสดงสถานะใน UI แทน
         }
       );
     }
@@ -149,7 +177,7 @@ export default function RiderDashboard() {
   // Start GPS tracking
   const startGPSTracking = () => {
     const interval = setInterval(() => {
-      if ('geolocation' in navigator) {
+      if ('geolocation' in navigator && DRIVER_ID) {
         navigator.geolocation.getCurrentPosition(
           async (position) => {
             const gpsData = {
@@ -182,6 +210,7 @@ export default function RiderDashboard() {
 
   // Update delivery status
   const updateDeliveryStatus = async (deliveryId: string, newStatus: string) => {
+    if (!DRIVER_ID) return;
     try {
       const response = await fetch(`/api/deliveries/${deliveryId}/status`, {
         method: 'PATCH',
@@ -191,7 +220,7 @@ export default function RiderDashboard() {
 
       if (response.ok) {
         fetchActiveDeliveries();
-        alert(`อัปเดตสถานะเป็น ${newStatus} เรียบร้อย`);
+        // alert(`อัปเดตสถานะเป็น ${newStatus} เรียบร้อย`);
       }
     } catch (error) {
       console.error('Error updating status:', error);
@@ -227,35 +256,31 @@ export default function RiderDashboard() {
     window.open(url, '_blank');
   };
 
-  // Toggle Auto Mode - จัดเรียงตาม Priority
+  // Toggle Auto Mode
   const toggleAutoMode = () => {
     if (!autoMode) {
-      // เปิด Auto mode - เรียงตาม priority score
       const sorted = [...activeDeliveries, ...availableJobs].sort((a, b) => {
         return (b.priority_score || 0) - (a.priority_score || 0);
       });
       setDeliveryQueue(sorted);
       setAutoMode(true);
     } else {
-      // ปิด Auto mode - ให้ rider เลือกเอง
       setDeliveryQueue([]);
       setAutoMode(false);
     }
   };
 
-  // เพิ่มจุดส่งเข้า queue (สำหรับ manual mode)
+  // Queue Management
   const addToQueue = (delivery: Delivery) => {
     if (!deliveryQueue.find(d => d.delivery_id === delivery.delivery_id)) {
       setDeliveryQueue([...deliveryQueue, delivery]);
     }
   };
 
-  // ลบจุดส่งออกจาก queue
   const removeFromQueue = (deliveryId: string) => {
     setDeliveryQueue(deliveryQueue.filter(d => d.delivery_id !== deliveryId));
   };
 
-  // เปลี่ยนลำดับในqueue
   const moveInQueue = (deliveryId: string, direction: 'up' | 'down') => {
     const index = deliveryQueue.findIndex(d => d.delivery_id === deliveryId);
     if (index === -1) return;
@@ -269,14 +294,16 @@ export default function RiderDashboard() {
     setDeliveryQueue(newQueue);
   };
 
+  // Effects
   useEffect(() => {
-    fetchDriverInfo();
-    fetchActiveDeliveries();
-    fetchAvailableJobs();
-    requestLocation();
-  }, []);
+    if (DRIVER_ID) {
+      fetchDriverInfo();
+      fetchActiveDeliveries();
+      fetchAvailableJobs();
+      requestLocation();
+    }
+  }, [DRIVER_ID]);
 
-  // Auto-update queue when auto mode is on
   useEffect(() => {
     if (autoMode) {
       const sorted = [...activeDeliveries, ...availableJobs].sort((a, b) => {
@@ -286,8 +313,20 @@ export default function RiderDashboard() {
     }
   }, [activeDeliveries, availableJobs, autoMode]);
 
+  // Interval Refresh
+  useEffect(() => {
+    if (!DRIVER_ID) return;
+    const interval = setInterval(() => {
+      fetchAvailableJobs();
+      fetchActiveDeliveries();
+    }, 15000); // Refresh every 15s
+    return () => clearInterval(interval);
+  }, [DRIVER_ID]);
+
+
+  // --- Render Helpers ---
   const getPriorityColor = (priorityClass: string) => {
-    switch (priorityClass) {
+    switch (priorityClass?.toLowerCase()) {
       case 'critical': return 'bg-red-500';
       case 'high': return 'bg-orange-500';
       case 'medium': return 'bg-blue-500';
@@ -316,28 +355,31 @@ export default function RiderDashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
         {/* Header */}
-        <div className="bg-seven-green text-white p-6 shadow-lg">
+        <div className="bg-seven-green text-white p-6 shadow-lg sticky top-0 z-30">
         <div className="container mx-auto">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold mb-1">🚚 Rider Dashboard</h1>
-              <p className="text-white/80">สวัสดี, {driverInfo?.name || 'คนขับ'}</p>
+              <p className="text-white/80">
+                สวัสดี, {driverInfo?.name || 'คนขับ'} 
+                {driverInfo?.store_name && <span className="text-xs bg-white/20 px-2 py-1 rounded ml-2">{driverInfo.store_name}</span>}
+              </p>
             </div>
-            <div className="flex items-center gap-6">
-              <div className="text-right">
-                <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-4">
+              <div className="text-right hidden sm:block">
+                <div className="flex items-center justify-end gap-2 mb-1">
                   {locationEnabled ? (
-                    <><MapPin className="w-5 h-5" /> <span>ตำแหน่งเปิดอยู่</span></>
+                    <><MapPin className="w-4 h-4 text-green-300" /> <span className="text-xs">GPS ON</span></>
                   ) : (
-                    <><AlertCircle className="w-5 h-5" /> <span>ตำแหน่งปิด</span></>
+                    <><AlertCircle className="w-4 h-4 text-red-300" /> <span className="text-xs">GPS OFF</span></>
                   )}
                 </div>
-                <div className="text-sm text-white/80">
-                  ⭐ คะแนน: {driverInfo?.rating.toFixed(1)} | จัดส่งสำเร็จ: {driverInfo?.total_deliveries}
+                <div className="text-xs text-white/80">
+                  งานวันนี้: {driverInfo?.total_deliveries || 0}
                 </div>
               </div>
               <Link href="/rider/account">
-                <button className="bg-white/20 hover:bg-white/30 p-3 rounded-full transition">
+                <button className="bg-white/20 hover:bg-white/30 p-2 rounded-full transition">
                   <User className="w-6 h-6" />
                 </button>
               </Link>
@@ -348,107 +390,65 @@ export default function RiderDashboard() {
 
       <div className="container mx-auto px-4 py-6">
         {/* View Mode Toggle & Auto Mode */}
-        <div className="bg-white rounded-xl shadow-md p-4 mb-6">
+        <div className="bg-white rounded-xl shadow-md p-4 mb-6 sticky top-[88px] z-20 border-b border-gray-100">
           <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
               <button
                 onClick={() => setViewMode('list')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
-                  viewMode === 'list' ? 'bg-seven-green text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all text-sm ${
+                  viewMode === 'list' ? 'bg-white text-seven-green shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                <List className="w-5 h-5" />
+                <List className="w-4 h-4" />
                 รายการ
               </button>
               <button
                 onClick={() => setViewMode('map')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
-                  viewMode === 'map' ? 'bg-seven-green text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all text-sm ${
+                  viewMode === 'map' ? 'bg-white text-seven-green shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                <Map className="w-5 h-5" />
+                <Map className="w-4 h-4" />
                 แผนที่
               </button>
             </div>
 
             <button
               onClick={toggleAutoMode}
-              className={`flex items-center gap-2 px-6 py-2 rounded-lg font-bold transition ${
-                autoMode ? 'bg-purple-600 text-white shadow-lg' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition text-sm ${
+                autoMode ? 'bg-purple-600 text-white shadow-md ring-2 ring-purple-200' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
               }`}
             >
-              <Zap className="w-5 h-5" />
-              {autoMode ? '🤖 Auto Mode (ON)' : 'Auto Mode (OFF)'}
+              <Zap className={`w-4 h-4 ${autoMode ? 'fill-current' : ''}`} />
+              {autoMode ? 'Auto Mode: ON' : 'Auto Mode: OFF'}
             </button>
           </div>
-
-          {autoMode && (
-            <div className="mt-4 p-3 bg-purple-50 border-l-4 border-purple-500 rounded">
-              <p className="text-sm text-purple-800">
-                <strong>Auto Mode เปิดอยู่:</strong> ระบบจะจัดลำดับการส่งตาม Priority Score โดยอัตโนมัติ (คะแนนสูง = ความสำคัญสูง)
-              </p>
-            </div>
-          )}
         </div>
 
-        {/* Delivery Queue Section */}
-        {deliveryQueue.length > 0 && (
-          <Card title={`📍 คิวการจัดส่ง (${deliveryQueue.length} จุด)`} className="mb-6">
-            <div className="space-y-3">
+        {/* Queue (Visible only if Auto Mode or Manual Queue has items) */}
+        {(autoMode || deliveryQueue.length > 0) && (
+          <Card title={`📍 คิวการจัดส่ง (${deliveryQueue.length} จุด)`} className="mb-6 animate-in fade-in slide-in-from-bottom-4">
+            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
               {deliveryQueue.map((delivery, index) => (
-                <div key={delivery.delivery_id} className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                  <div className={`flex-shrink-0 w-10 h-10 rounded-full ${getPriorityColor(delivery.priority_class)} text-white flex items-center justify-center font-bold text-lg`}>
+                <div key={delivery.delivery_id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-seven-green transition-colors">
+                  <div className={`flex-shrink-0 w-8 h-8 rounded-full ${getPriorityColor(delivery.priority_class)} text-white flex items-center justify-center font-bold text-sm shadow-sm`}>
                     {index + 1}
                   </div>
 
-                  <div className="flex-1">
-                    <div className="font-bold text-gray-800">{delivery.order_number}</div>
-                    <div className="text-sm text-gray-600">{delivery.customer_name}</div>
-                    <div className="text-xs text-gray-500 mt-1">{delivery.delivery_location}</div>
-                  </div>
-
-                  <div className="text-right">
-                    <span className={`${getPriorityColor(delivery.priority_class)} text-white px-2 py-1 rounded text-xs font-bold uppercase block mb-1`}>
-                      {delivery.priority_class}
-                    </span>
-                    {delivery.priority_score && (
-                      <div className="text-xs font-medium text-gray-600">
-                        Score: {delivery.priority_score.toFixed(1)}
-                      </div>
-                    )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-gray-800 text-sm truncate">{delivery.order_number}</div>
+                    <div className="text-xs text-gray-500 truncate">{delivery.delivery_location}</div>
                   </div>
 
                   {!autoMode && (
                     <div className="flex flex-col gap-1">
-                      <button
-                        onClick={() => moveInQueue(delivery.delivery_id, 'up')}
-                        disabled={index === 0}
-                        className="p-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                      >
-                        ▲
-                      </button>
-                      <button
-                        onClick={() => moveInQueue(delivery.delivery_id, 'down')}
-                        disabled={index === deliveryQueue.length - 1}
-                        className="p-1 bg-gray-200 hover:bg-gray-300 rounded disabled:opacity-30 disabled:cursor-not-allowed"
-                      >
-                        ▼
-                      </button>
+                      <button onClick={() => moveInQueue(delivery.delivery_id, 'up')} disabled={index === 0} className="p-1 hover:bg-gray-200 rounded disabled:opacity-30 text-xs">▲</button>
+                      <button onClick={() => moveInQueue(delivery.delivery_id, 'down')} disabled={index === deliveryQueue.length - 1} className="p-1 hover:bg-gray-200 rounded disabled:opacity-30 text-xs">▼</button>
                     </div>
                   )}
 
-                  <button
-                    onClick={() => removeFromQueue(delivery.delivery_id)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded"
-                  >
-                    ✕
-                  </button>
-
-                  <button
-                    onClick={() => navigateToDestination(delivery.delivery_lat, delivery.delivery_lon)}
-                    className="p-2 bg-seven-green text-white rounded hover:bg-green-700"
-                  >
-                    <Navigation className="w-5 h-5" />
+                  <button onClick={() => navigateToDestination(delivery.delivery_lat, delivery.delivery_lon)} className="p-2 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200">
+                    <Navigation className="w-4 h-4" />
                   </button>
                 </div>
               ))}
@@ -457,15 +457,13 @@ export default function RiderDashboard() {
         )}
 
         {viewMode === 'map' && (
-          <Card title="🗺️ แผนที่จุดส่ง" className="mb-6">
+          <Card title="🗺️ แผนที่จุดส่ง" className="mb-6 h-[500px]">
             <DynamicRiderMap
               deliveries={[...activeDeliveries, ...availableJobs]}
               currentLocation={currentLocation || undefined}
               onLocationSelect={(deliveryId) => {
                 const delivery = [...activeDeliveries, ...availableJobs].find(d => d.delivery_id === deliveryId);
-                if (delivery) {
-                  setSelectedDelivery(delivery);
-                }
+                if (delivery) setSelectedDelivery(delivery);
               }}
             />
           </Card>
@@ -473,232 +471,194 @@ export default function RiderDashboard() {
 
         {viewMode === 'list' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Active Deliveries */}
-            <Card title="📦 งานที่กำลังทำ" className="h-fit">
+            {/* Active Deliveries Column */}
+            <div className="space-y-4">
+              <h2 className="font-bold text-lg text-gray-800 flex items-center gap-2">
+                <Package className="w-5 h-5 text-seven-green" />
+                งานที่กำลังทำ ({activeDeliveries.length})
+              </h2>
+              
               {activeDeliveries.length === 0 ? (
-                <div className="text-center py-10 text-gray-500">
-                  <Package className="w-16 h-16 mx-auto mb-3 text-gray-300" />
-                  <p>ยังไม่มีงานที่กำลังทำ</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {activeDeliveries.map((delivery) => (
-                  <div key={delivery.delivery_id} className="border rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between mb-3">
+                <div className="bg-white rounded-xl p-8 text-center border-2 border-dashed border-gray-200">
+                  <p className="text-gray-400">ยังไม่มีงานที่รับไว้</p>
+                </div>
+              ) : (
+                activeDeliveries.map((delivery) => (
+                  <div key={delivery.delivery_id} className="bg-white rounded-xl shadow-sm border-l-4 border-seven-green p-4 hover:shadow-md transition-all">
+                    <div className="flex justify-between items-start mb-3">
                       <div>
-                        <div className="font-bold text-lg">{delivery.order_number}</div>
-                        <div className="text-sm text-gray-500">{delivery.customer_name}</div>
+                        <span className="text-xs font-bold text-gray-400">ORDER</span>
+                        <div className="font-bold text-lg text-gray-800">{delivery.order_number}</div>
                       </div>
-                      <span className={`${getStatusColor(delivery.delivery_status)} text-white px-3 py-1 rounded-full text-xs font-bold uppercase`}>
+                      <span className={`${getStatusColor(delivery.delivery_status)} text-white px-2 py-1 rounded text-xs font-bold uppercase tracking-wider`}>
                         {delivery.delivery_status}
                       </span>
                     </div>
 
-                    <div className="space-y-2 text-sm mb-4">
-                      <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-                        <div>
-                          <div className="font-medium">ที่อยู่จัดส่ง:</div>
-                          <div className="text-gray-600">{delivery.delivery_location}</div>
-                        </div>
+                    <div className="space-y-2 text-sm mb-4 bg-gray-50 p-3 rounded-lg">
+                      <div className="flex gap-2">
+                        <MapPin className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
+                        <span className="text-gray-700 line-clamp-2">{delivery.delivery_location}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Truck className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-600">ระยะทาง: {delivery.estimated_distance_km.toFixed(1)} กม.</span>
+                      <div className="flex gap-2 items-center">
+                        <User className="w-4 h-4 text-gray-400 shrink-0" />
+                        <span className="text-gray-600">{delivery.customer_name}</span>
+                        <a href={`tel:${delivery.customer_phone}`} className="text-blue-600 text-xs underline ml-auto">โทร</a>
                       </div>
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       {delivery.delivery_status === 'assigned' && (
-                        <Button
-                          onClick={() => updateDeliveryStatus(delivery.delivery_id, 'picked_up')}
-                          variant="primary"
-                          size="sm"
-                          fullWidth
-                        >
-                          รับสินค้าแล้ว
+                        <Button onClick={() => updateDeliveryStatus(delivery.delivery_id, 'picked_up')} size="sm" fullWidth>
+                          🛍️ รับสินค้าแล้ว
                         </Button>
                       )}
                       {delivery.delivery_status === 'picked_up' && (
-                        <Button
-                          onClick={() => updateDeliveryStatus(delivery.delivery_id, 'in_transit')}
-                          variant="primary"
-                          size="sm"
-                          fullWidth
-                        >
-                          เริ่มเดินทาง
+                        <Button onClick={() => updateDeliveryStatus(delivery.delivery_id, 'in_transit')} size="sm" fullWidth>
+                          🛵 เริ่มเดินทาง
                         </Button>
                       )}
                       {delivery.delivery_status === 'in_transit' && (
-                        <Button
-                          onClick={() => completeDelivery(delivery)}
-                          variant="primary"
-                          size="sm"
-                          fullWidth
-                        >
-                          <CheckCircle className="w-4 h-4 inline mr-1" />
-                          จัดส่งสำเร็จ
+                        <Button onClick={() => completeDelivery(delivery)} variant="primary" size="sm" fullWidth className="bg-green-600 hover:bg-green-700">
+                          ✅ จัดส่งสำเร็จ
                         </Button>
                       )}
-                      <Button
-                        onClick={() => navigateToDestination(delivery.delivery_lat, delivery.delivery_lon)}
-                        variant="secondary"
-                        size="sm"
-                      >
-                        <Navigation className="w-4 h-4" />
+                      <Button onClick={() => navigateToDestination(delivery.delivery_lat, delivery.delivery_lon)} variant="secondary" size="sm" fullWidth>
+                        🧭 นำทาง
                       </Button>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </Card>
+                ))
+              )}
+            </div>
 
-            {/* Available Jobs */}
-            <Card title="🆕 งานใหม่ที่พร้อมรับ" className="h-fit">
-            {availableJobs.length === 0 ? (
-              <div className="text-center py-10 text-gray-500">
-                <Clock className="w-16 h-16 mx-auto mb-3 text-gray-300" />
-                <p>ยังไม่มีงานใหม่</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {availableJobs.map((job) => (
-                  <div key={job.delivery_id} className="border rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between mb-3">
+            {/* Available Jobs Column */}
+            <div className="space-y-4">
+              <h2 className="font-bold text-lg text-gray-800 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-blue-500" />
+                งานใหม่ ({availableJobs.length})
+              </h2>
+
+              {availableJobs.length === 0 ? (
+                <div className="bg-white rounded-xl p-8 text-center border-2 border-dashed border-gray-200">
+                  <p className="text-gray-400">ไม่มีงานใหม่ในขณะนี้</p>
+                </div>
+              ) : (
+                availableJobs.map((job) => (
+                  <div key={job.delivery_id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:border-blue-200 transition-all relative overflow-hidden">
+                    {/* Priority Strip */}
+                    <div className={`absolute top-0 left-0 w-1 h-full ${getPriorityColor(job.priority_class)}`}></div>
+
+                    <div className="flex justify-between items-start mb-2 pl-3">
                       <div>
-                        <div className="font-bold text-lg">{job.order_number}</div>
-                        <div className="text-sm text-gray-500">{job.customer_name}</div>
+                        <div className="font-bold text-gray-800">{job.order_number}</div>
+                        <div className="text-xs text-gray-500">{new Date(job.created_at).toLocaleTimeString('th-TH')}</div>
                       </div>
                       <div className="text-right">
-                        <span className={`${getPriorityColor(job.priority_class)} text-white px-3 py-1 rounded-full text-xs font-bold uppercase block mb-1`}>
+                        <div className="text-sm font-bold text-gray-700">{job.estimated_distance_km.toFixed(1)} กม.</div>
+                        <div className={`text-[10px] font-bold uppercase ${getPriorityColor(job.priority_class)} text-white px-1.5 py-0.5 rounded inline-block`}>
                           {job.priority_class}
-                        </span>
-                        {job.priority_score && (
-                          <div className="text-xs text-gray-600">
-                            คะแนน: {job.priority_score.toFixed(1)}
-                          </div>
-                        )}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="space-y-2 text-sm mb-4">
-                      <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-                        <div>
-                          <div className="font-medium">ที่อยู่จัดส่ง:</div>
-                          <div className="text-gray-600">{job.delivery_location}</div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Truck className="w-4 h-4 text-gray-400" />
-                        <span className="text-gray-600">ระยะทาง: {job.estimated_distance_km.toFixed(1)} กม.</span>
-                      </div>
+                    <div className="pl-3 text-sm text-gray-600 mb-4 line-clamp-2">
+                      📍 {job.delivery_location}
                     </div>
 
-                    <div className="flex gap-2">
-                      {!autoMode && !deliveryQueue.find(d => d.delivery_id === job.delivery_id) && (
-                        <Button
-                          onClick={() => addToQueue(job)}
-                          variant="secondary"
-                          size="sm"
-                          fullWidth
-                        >
-                          + เพิ่มเข้าคิว
-                        </Button>
-                      )}
-                      {deliveryQueue.find(d => d.delivery_id === job.delivery_id) && (
-                        <div className="flex-1 bg-green-100 text-green-700 py-2 px-3 rounded text-sm text-center font-medium">
-                          ✓ อยู่ในคิวแล้ว
-                        </div>
-                      )}
-                      <Button
-                        onClick={() => setSelectedDelivery(job)}
-                        variant="primary"
-                        size="sm"
-                        fullWidth={autoMode || deliveryQueue.find(d => d.delivery_id === job.delivery_id) ? true : false}
-                      >
+                    <div className="pl-3 flex gap-2">
+                      <Button onClick={() => setSelectedDelivery(job)} size="sm" fullWidth variant="outline">
                         ดูรายละเอียด
                       </Button>
+                      {!deliveryQueue.find(d => d.delivery_id === job.delivery_id) && (
+                        <Button onClick={() => addToQueue(job)} size="sm" fullWidth variant="secondary">
+                          + คิว
+                        </Button>
+                      )}
                     </div>
                   </div>
-                ))}
-                </div>
+                ))
               )}
-            </Card>
+            </div>
           </div>
         )}
       </div>
 
       {/* Job Detail Modal */}
       {selectedDelivery && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setSelectedDelivery(null)}>
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-seven-green p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold">{selectedDelivery.order_number}</h2>
-                  <p className="text-white/90">รายละเอียดงานจัดส่ง</p>
-                </div>
-                <button onClick={() => setSelectedDelivery(null)} className="text-white/80 hover:text-white text-3xl">×</button>
-              </div>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50 animate-in fade-in duration-200" onClick={() => setSelectedDelivery(null)}>
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[90vh] overflow-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-seven-green p-6 text-white relative">
+              <button onClick={() => setSelectedDelivery(null)} className="absolute top-4 right-4 text-white/80 hover:text-white bg-black/10 hover:bg-black/20 rounded-full p-1 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+              <h2 className="text-xl font-bold">{selectedDelivery.order_number}</h2>
+              <p className="text-white/80 text-sm mt-1">รายละเอียดงานจัดส่ง</p>
             </div>
 
-            <div className="p-6">
-              <div className="space-y-4">
+            <div className="p-6 space-y-6">
+              {/* Customer Section */}
+              <div className="flex gap-4 items-center">
+                <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-2xl">👤</div>
                 <div>
-                  <h3 className="font-bold text-gray-700 mb-2">ข้อมูลลูกค้า</h3>
-                  <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
-                    <div><span className="text-gray-500">ชื่อ:</span> <span className="font-medium">{selectedDelivery.customer_name}</span></div>
-                    <div><span className="text-gray-500">เบอร์โทร:</span> <span className="font-medium">{selectedDelivery.customer_phone}</span></div>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="font-bold text-gray-700 mb-2">จุดรับสินค้า</h3>
-                  <div className="bg-gray-50 rounded-lg p-4 text-sm">
-                    <div className="text-gray-600">{selectedDelivery.pickup_location}</div>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="font-bold text-gray-700 mb-2">จุดส่งสินค้า</h3>
-                  <div className="bg-gray-50 rounded-lg p-4 text-sm">
-                    <div className="text-gray-600">{selectedDelivery.delivery_location}</div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-blue-50 rounded-lg p-3">
-                    <div className="text-xs text-gray-600">ระยะทาง</div>
-                    <div className="text-lg font-bold text-blue-600">{selectedDelivery.estimated_distance_km.toFixed(1)} กม.</div>
-                  </div>
-                  <div className="bg-purple-50 rounded-lg p-3">
-                    <div className="text-xs text-gray-600">ความสำคัญ</div>
-                    <div className="text-lg font-bold text-purple-600 uppercase">{selectedDelivery.priority_class}</div>
-                  </div>
+                  <div className="font-bold text-gray-800">{selectedDelivery.customer_name}</div>
+                  <div className="text-sm text-gray-500">{selectedDelivery.customer_phone || 'ไม่ระบุเบอร์โทร'}</div>
                 </div>
               </div>
 
-              <div className="flex gap-3 mt-6">
+              {/* Route Section */}
+              <div className="relative border-l-2 border-dashed border-gray-300 ml-2 space-y-8 py-2">
+                <div className="relative pl-6">
+                  <div className="absolute -left-[9px] top-1 w-4 h-4 bg-seven-green rounded-full border-2 border-white shadow-sm"></div>
+                  <div className="text-xs font-bold text-gray-400 uppercase mb-1">รับสินค้า</div>
+                  <div className="text-sm font-medium text-gray-800">{selectedDelivery.pickup_location || 'ที่ร้าน'}</div>
+                </div>
+                <div className="relative pl-6">
+                  <div className="absolute -left-[9px] top-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-sm"></div>
+                  <div className="text-xs font-bold text-gray-400 uppercase mb-1">ส่งสินค้า</div>
+                  <div className="text-sm font-medium text-gray-800">{selectedDelivery.delivery_location}</div>
+                </div>
+              </div>
+
+              {/* Info Grid */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-gray-50 p-3 rounded-lg text-center">
+                  <div className="text-xs text-gray-500 mb-1">ระยะทาง</div>
+                  <div className="font-bold text-gray-800">{selectedDelivery.estimated_distance_km.toFixed(1)} กม.</div>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg text-center">
+                  <div className="text-xs text-gray-500 mb-1">ค่าส่ง</div>
+                  <div className="font-bold text-gray-800">฿30</div>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg text-center">
+                  <div className="text-xs text-gray-500 mb-1">คะแนนงาน</div>
+                  <div className="font-bold text-purple-600">{selectedDelivery.priority_score?.toFixed(0) || '-'}</div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-2">
                 <Button
                   onClick={() => navigateToDestination(selectedDelivery.delivery_lat, selectedDelivery.delivery_lon)}
                   variant="secondary"
                   fullWidth
+                  className="py-3"
                 >
                   <Navigation className="w-4 h-4 inline mr-2" />
-                  นำทาง
+                  ดูแผนที่
                 </Button>
                 <Button
-                  onClick={() => {
-                    // Accept job logic here
-                    setSelectedDelivery(null);
-                    alert('รับงานสำเร็จ! กรุณารับสินค้าที่ร้าน');
-                  }}
+                  onClick={handleAcceptJob}
                   variant="primary"
                   fullWidth
+                  disabled={processingJob}
+                  className="py-3 shadow-lg shadow-green-200"
                 >
-                  รับงานนี้
+                  {processingJob ? (
+                    <LoadingSpinner size="sm" />
+                  ) : (
+                    <>✋ รับงานนี้</>
+                  )}
                 </Button>
               </div>
             </div>

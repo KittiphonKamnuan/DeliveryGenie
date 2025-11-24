@@ -46,7 +46,7 @@ export default function CustomerLoginPage() {
       if (result?.error) {
         setError(result.error);
       } else if (result?.ok) {
-        router.push('/shop');
+        router.push('/');
         router.refresh();
       }
     } catch (err) {
