@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+   turbopack: {}, // เพิ่มบรรทัดนี้เพื่อแก้ error
+
+  
   /* config options here */
   reactStrictMode: true,
 
@@ -9,9 +12,7 @@ const nextConfig = {
   },
 
   // Skip ESLint during builds for faster compilation
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  
 
   // Optimize images
   images: {
