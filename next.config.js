@@ -19,6 +19,20 @@ const nextConfig = {
     unoptimized: true,
   },
 
+    // 🚀 NEW: Redirect root URL (/) to the shop page (/shop)
+  async redirects() {
+    return [
+      {
+        // When someone hits the root URL (e.g., localhost:3000)
+        source: '/', 
+        // Send them to the shop page
+        destination: '/shop', 
+        // Use a permanent (308) redirect
+        permanent: true, 
+      },
+    ];
+  },
+
   // Remove console logs in production
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',

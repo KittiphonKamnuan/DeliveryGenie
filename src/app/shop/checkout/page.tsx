@@ -8,6 +8,9 @@ import { Header, Button, LoadingSpinner, OrderStatusTracker } from '@/components
 import { useCart } from '@/contexts/CartContext';
 import type { Store } from '@/types/shopping';
 
+// 💡 กำหนด Endpoint URL เป็นตัวแปรคงที่
+const CREATE_ORDER_API_ENDPOINT = 'https://rywh91krwb.execute-api.ap-southeast-1.amazonaws.com/prod/order';
+
 export default function CheckoutPage() {
   const router = useRouter();
   const { data: session } = useSession();
@@ -108,9 +111,18 @@ export default function CheckoutPage() {
 
       const result = await response.json();
 
-      if (result.success) {
-        setNearestStore(result.store);
-        setCartStore(result.store);
+      if (result.success && result.store) {
+        // 🛠️ การแก้ไข: ดึง Object ร้านค้าแรกจาก Array ถ้า API ส่ง Array มา
+        const storeData = Array.isArray(result.store) ? result.store[0] : result.store;
+        
+        if (storeData && storeData.id) {
+            console.log("Nearest Store ID Found:", storeData.id); // DEBUG
+            setNearestStore(storeData); // ⬅️ ตั้งค่า State ด้วย Object ร้านค้า
+            setCartStore(storeData);
+        } else {
+            // ถ้า Array ว่าง หรือ Object ไม่มี ID
+            throw new Error('ไม่พบข้อมูลร้านหรือ ID ร้านค้าในผลลัพธ์');
+        }
       } else {
         throw new Error(result.error || 'ไม่พบร้าน 7-11 ใกล้เคียง');
       }
@@ -140,8 +152,10 @@ export default function CheckoutPage() {
         throw new Error('ไม่มีสินค้าในตะกร้า');
       }
 
-      if (!nearestStore) {
-        throw new Error('ไม่พบข้อมูลร้าน กรุณาลองใหม่อีกครั้ง');
+      // 🛠️ การแก้ไข: ตรวจสอบ nearestStore.id ก่อนใช้
+      if (!nearestStore || !nearestStore.id) {
+        // นี่คือการจับ error ที่ store_id เป็น undefined หรือ null
+        throw new Error('ไม่พบข้อมูลร้าน (ID) กรุณารีเฟรชและลองใหม่อีกครั้ง');
       }
 
       if (!userCoordinates) {
@@ -152,38 +166,52 @@ export default function CheckoutPage() {
       const deliveryWindowStart = new Date(deliveryDateTime.getTime() - 30 * 60000); // -30 min
       const deliveryWindowEnd = new Date(deliveryDateTime.getTime() + 30 * 60000); // +30 min
 
+      const payload = {
+        customer_id: customerId || undefined, // Use session customer_id if available
+        store_id: nearestStore.id, // ⬅️ ตอนนี้ nearestStore.id ควรมีค่า
+        customer_name: formData.customer_name,
+        customer_phone: formData.customer_phone,
+        customer_email: formData.customer_email,
+        delivery_address: formData.delivery_address,
+        delivery_latitude: userCoordinates.latitude,
+        delivery_longitude: userCoordinates.longitude,
+        delivery_notes: formData.delivery_notes,
+        delivery_date: deliveryDateTime.toISOString(),
+        delivery_window_start: deliveryWindowStart.toISOString(),
+        delivery_window_end: deliveryWindowEnd.toISOString(),
+        // ข้อมูลสินค้าที่ถูกส่งไป
+        items: cart.items.map((item) => ({
+          product_id: item.product.product_id,
+          quantity: item.quantity,
+          unit_price: item.product.price,
+        })),
+        subtotal: cart.subtotal,
+        tax: cart.tax,
+        shipping_fee: cart.shipping_fee,
+        total_amount: cart.total,
+      };
+
+      // DEBUG: Log payload ที่กำลังจะส่ง
+      console.log("Order Payload Sent:", payload);
+
+
       // Create order with customer_id from session if available
-      const response = await fetch('/api/orders/create', {
+      const response = await fetch(CREATE_ORDER_API_ENDPOINT, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customer_id: customerId || undefined, // Use session customer_id if available
-          customer_name: formData.customer_name,
-          customer_phone: formData.customer_phone,
-          customer_email: formData.customer_email,
-          delivery_address: formData.delivery_address,
-          delivery_latitude: userCoordinates.latitude,
-          delivery_longitude: userCoordinates.longitude,
-          delivery_notes: formData.delivery_notes,
-          delivery_date: deliveryDateTime.toISOString(),
-          delivery_window_start: deliveryWindowStart.toISOString(),
-          delivery_window_end: deliveryWindowEnd.toISOString(),
-          items: cart.items.map((item) => ({
-            product_id: item.product.product_id,
-            quantity: item.quantity,
-            unit_price: item.product.price,
-          })),
-          subtotal: cart.subtotal,
-          tax: cart.tax,
-          shipping_fee: cart.shipping_fee,
-          total_amount: cart.total,
-        }),
+        body: JSON.stringify(payload), // ⬅️ ใช้ payload ที่เราสร้าง
       });
 
       const result = await response.json();
 
+      if (!response.ok) {
+          // ถ้าเป็น 4xx หรือ 5xx ให้อ่าน error message จาก body
+          const errorMessage = result.error || (typeof result === 'string' ? result : JSON.stringify(result));
+          throw new Error(errorMessage);
+      }
+      
       if (!result.success) {
-        throw new Error(result.error);
+        throw new Error(result.error || JSON.stringify(result));
       }
 
       // Save customer ID for order tracking (backward compatibility for guests)
@@ -202,6 +230,7 @@ export default function CheckoutPage() {
   };
 
   // Loading state - Finding nearest 7-11
+// ... (โค้ดส่วนที่เหลือเหมือนเดิม) ...
   if (findingStore) {
     return (
       <div className="min-h-screen bg-gray-50">

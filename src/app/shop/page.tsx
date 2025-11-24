@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+// 🔑 NEW: Import useSession for secure authentication sync
+import { useSession } from 'next-auth/react'; 
 import { MapPin, ShoppingCart, Plus, ThermometerSnowflake, Search } from 'lucide-react';
 import { Header, LoadingSpinner, Button, OrderStatusTracker } from '@/components';
 import { useCart } from '@/contexts/CartContext';
@@ -19,26 +21,38 @@ const CATEGORY_LABELS: Record<string, string> = {
 export default function ShopPage() {
   const { cart, addToCart, setStore } = useCart();
   
+  // 🔑 NEW: Retrieve authentication status and user data from NextAuth
+  const { data: session } = useSession(); 
+
   // State
-  const [loading, setLoading] = useState(true); // Loading for general page/products
-  const [loadingLocation, setLoadingLocation] = useState(true); // Initial loading for location
+  const [loading, setLoading] = useState(true);
+  const [loadingLocation, setLoadingLocation] = useState(true);
   const [store, setStoreData] = useState<Store | null>(null);
   const [products, setProducts] = useState<Record<string, Product[]>>({});
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null); 
 
   useEffect(() => {
-    // Start process
+    // Start store discovery process
     getCurrentLocation();
-
-    // Get customer ID from localStorage
-    const storedCustomerId = localStorage.getItem('customer_id');
-    if (storedCustomerId) {
-      setCustomerId(storedCustomerId);
-    }
+    
+    // The previous localStorage code for customerId is REMOVED
   }, []);
+
+  // 🔑 NEW: Separate useEffect to handle session synchronization
+  // This hook runs whenever the NextAuth session object changes.
+  useEffect(() => {
+    // This securely pulls the customer ID from the NextAuth session/JWT
+    // Assumes your NextAuth config exposes the ID as session.user.id
+    if (session?.user?.id) {
+      setCustomerId(session.user.id as string); 
+    } else {
+      // Clear customerId if the user logs out or is a guest
+      setCustomerId(null); 
+    }
+  }, [session]); // Dependency array ensures sync on login/logout
 
   const getCurrentLocation = () => {
     setLoadingLocation(true);
@@ -114,13 +128,10 @@ export default function ShopPage() {
       const result = await response.json();
 
       if (result.success) {
-        // API ควรส่งกลับมาเป็น Grouped Object (ตามที่แก้ไปในไฟล์ API route)
-        // หรือถ้าส่งเป็น Array ต้องจัดการ Grouping ที่นี่
         setProducts(result.data || {}); 
       }
     } catch (err) {
       console.error('Error loading products:', err);
-      // ไม่ Set Error เต็มหน้าจอ เพื่อให้ยังเห็นข้อมูลร้านค้าได้ แต่สินค้าอาจจะไม่ขึ้น
     }
   };
 

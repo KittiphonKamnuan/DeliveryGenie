@@ -242,7 +242,7 @@ model orders {
   customers                 customers                   @relation(fields: [customer_id], references: [id])
   priority_calculation_logs priority_calculation_logs[]
 
-  store_id    String 
+  store_id    String
   stores      stores   @relation(fields: [store_id], references: [id])
 
   @@index([customer_id])

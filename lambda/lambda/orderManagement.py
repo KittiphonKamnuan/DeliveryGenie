@@ -4,7 +4,8 @@ import uuid
 import time
 import urllib.request
 import urllib.parse
-from datetime import datetime
+import math
+from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from decimal import Decimal
 
@@ -42,167 +43,266 @@ else:
 # ==================== Helper Functions ====================
 
 def validate_customer(customer_id: str, conn) -> Optional[Dict]:
-    """ตรวจสอบว่า Customer มีอยู่จริงและ Active"""
+    """ตรวจสอบว่า Customer มีอยู่จริง"""
     sql = text("""
-        SELECT id, name, email, phone, address, latitude, longitude, tier
+        SELECT id, name, email, phone,
+               address_line1, address_line2, district, city, postal_code,
+               latitude, longitude, priority_level
         FROM customers
-        WHERE id = :customer_id AND is_active = TRUE
+        WHERE id = :customer_id
     """)
     result = conn.execute(sql, {"customer_id": customer_id}).fetchone()
     if result:
+        address_parts = [result[4]]  # address_line1
+        if result[5]:  # address_line2
+            address_parts.append(result[5])
+        address_parts.append(result[6])  # district
+        address_parts.append(result[7])  # city
+        if result[8]:  # postal_code
+            address_parts.append(result[8])
+
         return {
-            "id": result[0], "name": result[1], "email": result[2],
-            "phone": result[3], "address": result[4],
-            "lat": float(result[5]) if result[5] else None,
-            "lon": float(result[6]) if result[6] else None,
-            "tier": result[7]
+            "id": result[0],
+            "name": result[1],
+            "email": result[2],
+            "phone": result[3],
+            "address": ", ".join(address_parts),
+            "lat": float(result[9]) if result[9] else None,
+            "lon": float(result[10]) if result[10] else None,
+            "tier": result[11] or "standard"
         }
     return None
 
 
-def validate_store(store_id: str, conn) -> Optional[Dict]:
-    """ตรวจสอบว่า Store มีอยู่จริงและเปิดทำการ"""
-    sql = text("""
-        SELECT id, name, address, latitude, longitude, is_open, store_type
-        FROM stores
-        WHERE id = :store_id AND is_active = TRUE
-    """)
-    result = conn.execute(sql, {"store_id": store_id}).fetchone()
+def get_store_details(store_id: Optional[str], conn) -> Optional[Dict]:
+    """
+    ดึง Store ตาม ID ที่ระบุ หรือดึง Store ที่ active ตัวแรกหากไม่ได้ระบุ ID
+    (แทนที่ get_default_store)
+    """
+    if store_id:
+        # ดึง Store ตาม ID ที่ระบุ
+        sql = text("""
+            SELECT id, name, address, latitude, longitude
+            FROM stores
+            WHERE id = :store_id AND is_active = true
+        """)
+        params = {"store_id": store_id}
+    else:
+        # ดึง Store ที่ active ตัวแรก (Default)
+        sql = text("""
+            SELECT id, name, address, latitude, longitude
+            FROM stores
+            WHERE is_active = true
+            ORDER BY created_at
+            LIMIT 1
+        """)
+        params = {}
+        
+    result = conn.execute(sql, params).fetchone()
     if result:
         return {
-            "id": result[0], "name": result[1], "address": result[2],
+            "id": result[0],
+            "name": result[1],
+            "address": result[2],
             "lat": float(result[3]) if result[3] else None,
-            "lon": float(result[4]) if result[4] else None,
-            "is_open": result[5], "store_type": result[6]
+            "lon": float(result[4]) if result[4] else None
         }
     return None
 
+# NOTE: Original get_default_store is now replaced by get_store_details
+# The original function is commented out for completeness but is not used
+# def get_default_store(conn) -> Optional[Dict]:
+#     """ดึง Store ที่ active ตัวแรก"""
+#     sql = text("""
+#         SELECT id, name, address, latitude, longitude
+#         FROM stores
+#         WHERE is_active = true
+#         ORDER BY created_at
+#         LIMIT 1
+#     """)
+#     result = conn.execute(sql).fetchone()
+#     if result:
+#         return {
+#             "id": result[0],
+#             "name": result[1],
+#             "address": result[2],
+#             "lat": float(result[3]) if result[3] else None,
+#             "lon": float(result[4]) if result[4] else None
+#         }
+#     return None
 
-def validate_products(product_ids: List[str], conn) -> Dict[str, Dict]:
-    """ตรวจสอบว่า Products มีอยู่จริง"""
+
+def validate_products(product_ids: List[str], store_id: str, conn) -> Dict[str, Dict]:
+    """ตรวจสอบว่า Products มีอยู่จริงและมี stock ที่ store"""
     if not product_ids:
         return {}
 
     placeholders = ','.join([f':pid_{i}' for i in range(len(product_ids))])
+
     sql = text(f"""
-        SELECT id, name, price, weight_kg, volume_m3, category,
-               requires_cold_chain, is_fragile, shelf_life_hours
-        FROM products
-        WHERE id IN ({placeholders}) AND is_active = TRUE
+        SELECT
+            p.id, p.name, p.base_price, p.category, p.is_active,
+            p.temperature_requirement, p.is_fragile, p.typical_expiration_hours,
+            si.quantity as stock
+        FROM products p
+        LEFT JOIN store_inventories si ON si.product_id = p.id AND si.store_id = :store_id
+        WHERE p.id IN ({placeholders})
     """)
 
     params = {f"pid_{i}": pid for i, pid in enumerate(product_ids)}
+    params['store_id'] = store_id
+
     results = conn.execute(sql, params).fetchall()
 
     products_dict = {}
     for row in results:
         products_dict[row[0]] = {
-            "id": row[0], "name": row[1], "price": float(row[2]),
-            "weight_kg": float(row[3]) if row[3] else 0,
-            "volume_m3": float(row[4]) if row[4] else 0,
-            "category": row[5],
-            "requires_cold_chain": row[6],
-            "is_fragile": row[7],
-            "shelf_life_hours": row[8]
+            "id": row[0],
+            "name": row[1],
+            "price": float(row[2]),
+            "category": row[3],
+            "is_active": row[4],
+            "temperature_requirement": row[5],
+            "is_fragile": row[6] or False,
+            "typical_expiration_hours": row[7],
+            "stock": int(row[8]) if row[8] else 0
         }
     return products_dict
 
 
-def check_inventory(store_id: str, product_id: str, quantity: int, conn) -> bool:
+def check_inventory(product_id: str, quantity: int, products: Dict) -> bool:
     """ตรวจสอบ Stock ว่าเพียงพอหรือไม่"""
-    sql = text("""
-        SELECT available_quantity
-        FROM store_inventories
-        WHERE store_id = :store_id AND product_id = :product_id
-    """)
-    result = conn.execute(sql, {"store_id": store_id, "product_id": product_id}).fetchone()
-
-    if result and result[0] >= quantity:
-        return True
-    return False
+    product = products.get(product_id)
+    if not product:
+        return False
+    return product['stock'] >= quantity
 
 
 def update_inventory(store_id: str, product_id: str, quantity: int, conn):
     """ลด Stock หลังจากสร้าง Order"""
     sql = text("""
         UPDATE store_inventories
-        SET available_quantity = available_quantity - :quantity,
-            updated_at = NOW()
+        SET quantity = quantity - :quantity,
+            last_updated = NOW()
         WHERE store_id = :store_id AND product_id = :product_id
     """)
-    conn.execute(sql, {"store_id": store_id, "product_id": product_id, "quantity": quantity})
+    conn.execute(sql, {
+        "store_id": store_id,
+        "product_id": product_id,
+        "quantity": quantity
+    })
 
 
 def calculate_priority(order_data: Dict) -> Dict:
     """เรียก priority.py Lambda เพื่อคำนวณ Priority Score"""
     if not PRIORITY_API_URL:
         print("⚠️ PRIORITY_API_URL not set. Using default priority 50")
-        return {"priority_score": 50, "breakdown": {}}
+        return {"priority_score": 50, "priority_class": "medium", "breakdown": {}}
 
     try:
+        api_data = {
+            "order_id": order_data['order_id'],
+            "start_location": {
+                "lat": order_data['delivery_latitude'], 
+                "lon": order_data['delivery_longitude']
+            },
+            "use_routing_api": True
+        }
+        
         req = urllib.request.Request(
             PRIORITY_API_URL,
-            data=json.dumps(order_data).encode('utf-8'),
+            data=json.dumps(api_data).encode('utf-8'),
             headers={'Content-Type': 'application/json'}
         )
 
         with urllib.request.urlopen(req, timeout=3) as response:
             result = json.loads(response.read().decode('utf-8'))
+            
             if result.get('success'):
-                return result.get('result', {"priority_score": 50})
+                # FIX: ดึงข้อมูลจาก 'order_result' แทน 'result'
+                order_result = result.get('order_result')
+                if order_result:
+                    return {
+                        "priority_score": order_result.get('priority_score', 50),
+                        "priority_class": order_result.get('priority_class', 'medium'),
+                        "breakdown": order_result.get('priority_breakdown', {})
+                    }
+                
     except Exception as e:
         print(f"⚠️ Priority API Error: {e}. Using default priority 50")
+        # NOTE: หาก HTTP 400 เกิดขึ้นที่นี่ โค้ดจะใช้ค่า default 50
 
-    return {"priority_score": 50, "breakdown": {}}
+    return {"priority_score": 50, "priority_class": "medium", "breakdown": {}}
 
 
-def calculate_eta(origin: Dict, destination: Dict) -> Dict:
-    """เรียก etaCalculation.py Lambda เพื่อคำนวณ ETA"""
-    if not ETA_API_URL:
-        print("⚠️ ETA_API_URL not set. Using default ETA 30 min")
-        return {"eta_minutes": 30, "distance_km": 5}
+def generate_order_number() -> str:
+    """สร้าง Order Number แบบ ORD-YYYYMMDD-XXXX"""
+    now = datetime.now()
+    date_part = now.strftime("%Y%m%d")
+    random_part = str(uuid.uuid4())[:4].upper()
+    return f"ORD-{date_part}-{random_part}"
 
-    try:
-        eta_data = {"origin": origin, "destination": destination}
-        req = urllib.request.Request(
-            ETA_API_URL,
-            data=json.dumps(eta_data).encode('utf-8'),
-            headers={'Content-Type': 'application/json'}
-        )
 
-        with urllib.request.urlopen(req, timeout=3) as response:
-            result = json.loads(response.read().decode('utf-8'))
-            if result.get('success'):
-                return result.get('result', {"eta_minutes": 30, "distance_km": 5})
-    except Exception as e:
-        print(f"⚠️ ETA API Error: {e}. Using default ETA 30 min")
+def generate_delivery_number() -> str:
+    """สร้าง Delivery Number แบบ DEL-YYYYMMDD-XXXX"""
+    now = datetime.now()
+    date_part = now.strftime("%Y%m%d")
+    random_part = str(uuid.uuid4())[:4].upper()
+    return f"DEL-{date_part}-{random_part}"
 
-    return {"eta_minutes": 30, "distance_km": 5}
+
+def get_available_driver(conn) -> Optional[str]:
+    """หา Driver ที่ active และไม่ได้มีงาน"""
+    sql = text("""
+        SELECT id FROM drivers
+        WHERE status = 'active'
+        ORDER BY total_deliveries ASC
+        LIMIT 1
+    """)
+    result = conn.execute(sql).fetchone()
+    return result[0] if result else None
+
+
+def get_available_vehicle(conn) -> Optional[str]:
+    """หา Vehicle ที่ available"""
+    sql = text("""
+        SELECT id FROM vehicles
+        WHERE current_status = 'available'
+        ORDER BY created_at
+        LIMIT 1
+    """)
+    result = conn.execute(sql).fetchone()
+    return result[0] if result else None
 
 
 # ==================== Main Order Creation Logic ====================
 
 def create_order(order_request: Dict, conn) -> Dict:
-    """สร้าง Order ใหม่"""
+    """สร้าง Order ใหม่ด้วย Real Data"""
 
     # 1. Validate Customer
     customer = validate_customer(order_request['customer_id'], conn)
     if not customer:
-        raise ValueError("Customer not found or inactive")
+        raise ValueError("Customer not found")
 
     if not customer['lat'] or not customer['lon']:
-        raise ValueError("Customer location not set")
+        customer['lat'] = order_request.get('delivery_latitude')
+        customer['lon'] = order_request.get('delivery_longitude')
 
-    # 2. Validate Store
-    store = validate_store(order_request['store_id'], conn)
+        if not customer['lat'] or not customer['lon']:
+            raise ValueError("Customer location not available")
+
+    # 2. Get Store (pickup location) - **FIX APPLIED HERE**
+    requested_store_id = order_request.get('store_id')
+    store = get_store_details(requested_store_id, conn)
+    
     if not store:
-        raise ValueError("Store not found or inactive")
-
-    if not store['is_open']:
-        raise ValueError("Store is currently closed")
-
-    if not store['lat'] or not store['lon']:
-        raise ValueError("Store location not set")
+        if requested_store_id:
+            # If the user requested a specific store but it wasn't found/active
+            raise ValueError(f"Store ID {requested_store_id} not found or is inactive")
+        else:
+            # If no store was requested and no default store was found
+            raise ValueError("No active store found")
 
     # 3. Validate Products
     items = order_request.get('items', [])
@@ -210,201 +310,282 @@ def create_order(order_request: Dict, conn) -> Dict:
         raise ValueError("Order must contain at least one item")
 
     product_ids = [item['product_id'] for item in items]
-    products = validate_products(product_ids, conn)
+    # Use the correctly determined store['id']
+    products = validate_products(product_ids, store['id'], conn)
 
     if len(products) != len(product_ids):
         missing = set(product_ids) - set(products.keys())
         raise ValueError(f"Products not found: {missing}")
 
-    # 4. Check Inventory
+    # 4. Check Active & Stock
     for item in items:
-        if not check_inventory(store['id'], item['product_id'], item['quantity'], conn):
-            product_name = products[item['product_id']]['name']
-            raise ValueError(f"Insufficient stock for {product_name}")
+        product = products[item['product_id']]
+        if not product['is_active']:
+            raise ValueError(f"Product {product['name']} is not available")
+        # Check inventory using stock retrieved for the correct store
+        if not check_inventory(item['product_id'], item['quantity'], products):
+            raise ValueError(f"Insufficient stock for {product['name']} (available: {product['stock']})")
 
     # 5. Calculate Totals
-    total_price = 0
+    subtotal = 0
     total_weight = 0
-    total_volume = 0
     requires_cold_chain = False
     is_fragile = False
-    min_shelf_life = None
 
     enriched_items = []
     for item in items:
         product = products[item['product_id']]
         quantity = item['quantity']
+        unit_price = product['price']
+        item_total = unit_price * quantity
 
-        item_price = product['price'] * quantity
-        item_weight = product['weight_kg'] * quantity
-        item_volume = product['volume_m3'] * quantity
+        subtotal += item_total
+        total_weight += quantity * 0.5
 
-        total_price += item_price
-        total_weight += item_weight
-        total_volume += item_volume
-
-        if product['requires_cold_chain']:
+        if product['temperature_requirement'] in ['cold', 'frozen', 'chilled']:
             requires_cold_chain = True
         if product['is_fragile']:
             is_fragile = True
-
-        if product['shelf_life_hours']:
-            if min_shelf_life is None or product['shelf_life_hours'] < min_shelf_life:
-                min_shelf_life = product['shelf_life_hours']
 
         enriched_items.append({
             "product_id": product['id'],
             "name": product['name'],
             "quantity": quantity,
-            "price": product['price'],
-            "weight_kg": product['weight_kg'],
-            "volume_m3": product['volume_m3'],
+            "unit_price": unit_price,
             "category": product['category'],
-            "requires_cold_chain": product['requires_cold_chain'],
+            "temperature_requirement": product['temperature_requirement'],
             "is_fragile": product['is_fragile'],
-            "shelf_life_hours": product['shelf_life_hours']
+            "typical_expiration_hours": product['typical_expiration_hours']
         })
+
+    tax = subtotal * 0.07
+    shipping_fee = 30.0
+    total_amount = subtotal + tax + shipping_fee
 
     # 6. Calculate Priority Score
     priority_request = {
+        "order_id": order_id,
         "customer_id": customer['id'],
         "customer_tier": customer['tier'],
-        "store_lat": store['lat'],
-        "store_lon": store['lon'],
         "customer_lat": customer['lat'],
         "customer_lon": customer['lon'],
+        "delivery_latitude": order_request.get('delivery_latitude', customer['lat']),
+        "delivery_longitude": order_request.get('delivery_longitude', customer['lon']),
         "products": enriched_items,
         "delivery_window_start": order_request.get('delivery_window_start'),
-        "delivery_window_end": order_request.get('delivery_window_end')
+        "delivery_window_end": order_request.get('delivery_window_end'),
+        "total_amount": total_amount,
+        "total_weight_kg": total_weight
     }
 
     priority_result = calculate_priority(priority_request)
     priority_score = priority_result.get('priority_score', 50)
+    priority_class = priority_result.get('priority_class', 'medium')
 
-    # 7. Calculate ETA
-    eta_result = calculate_eta(
-        {"lat": store['lat'], "lon": store['lon']},
-        {"lat": customer['lat'], "lon": customer['lon']}
-    )
+    # 7. Parse datetime fields
+    delivery_date = order_request.get('delivery_date')
+    delivery_window_start = order_request.get('delivery_window_start')
+    delivery_window_end = order_request.get('delivery_window_end')
+
+    if isinstance(delivery_date, str):
+        delivery_date = datetime.fromisoformat(delivery_date.replace('Z', '+00:00'))
+    elif not delivery_date:
+        delivery_date = datetime.now() + timedelta(hours=2)
+
+    if isinstance(delivery_window_start, str):
+        delivery_window_start = datetime.fromisoformat(delivery_window_start.replace('Z', '+00:00'))
+    elif not delivery_window_start:
+        delivery_window_start = delivery_date
+
+    if isinstance(delivery_window_end, str):
+        delivery_window_end = datetime.fromisoformat(delivery_window_end.replace('Z', '+00:00'))
+    elif not delivery_window_end:
+        delivery_window_end = delivery_window_start + timedelta(minutes=30)
+
+    delivery_lat = order_request.get('delivery_latitude', customer['lat'])
+    delivery_lon = order_request.get('delivery_longitude', customer['lon'])
+    delivery_address = order_request.get('delivery_address', customer['address'])
+    delivery_notes = order_request.get('delivery_notes', '')
 
     # 8. Create Order in Database
     order_id = str(uuid.uuid4())
+    order_number = generate_order_number()
 
     sql_order = text("""
         INSERT INTO orders (
-            id, customer_id, store_id, status, total_price,
-            delivery_lat, delivery_lon, delivery_address,
-            priority_score, estimated_delivery_time,
-            delivery_window_start, delivery_window_end,
-            requires_cold_chain, is_fragile,
-            total_weight_kg, total_volume_m3,
+            id, order_number, customer_id, store_id,
+            order_date, delivery_date, delivery_window_start, delivery_window_end,
+            customer_priority, order_status,
+            delivery_address, delivery_latitude, delivery_longitude, delivery_notes,
+            subtotal, tax, shipping_fee, total_amount,
+            priority_score, priority_class, priority_breakdown,
             created_at, updated_at
         ) VALUES (
-            :id, :customer_id, :store_id, :status, :total_price,
-            :delivery_lat, :delivery_lon, :delivery_address,
-            :priority_score, :estimated_delivery_time,
-            :delivery_window_start, :delivery_window_end,
-            :requires_cold_chain, :is_fragile,
-            :total_weight_kg, :total_volume_m3,
+            :id, :order_number, :customer_id, :store_id,
+            :order_date, :delivery_date, :delivery_window_start, :delivery_window_end,
+            :customer_priority, :order_status,
+            :delivery_address, :delivery_latitude, :delivery_longitude, :delivery_notes,
+            :subtotal, :tax, :shipping_fee, :total_amount,
+            :priority_score, :priority_class, :priority_breakdown,
             NOW(), NOW()
         )
     """)
 
     conn.execute(sql_order, {
         "id": order_id,
+        "order_number": order_number,
         "customer_id": customer['id'],
         "store_id": store['id'],
-        "status": "pending",
-        "total_price": total_price,
-        "delivery_lat": customer['lat'],
-        "delivery_lon": customer['lon'],
-        "delivery_address": customer['address'],
+        "order_date": datetime.now(),
+        "delivery_date": delivery_date,
+        "delivery_window_start": delivery_window_start,
+        "delivery_window_end": delivery_window_end,
+        "customer_priority": customer['tier'],
+        "order_status": "pending",
+        "delivery_address": delivery_address,
+        "delivery_latitude": delivery_lat,
+        "delivery_longitude": delivery_lon,
+        "delivery_notes": delivery_notes,
+        "subtotal": subtotal,
+        "tax": tax,
+        "shipping_fee": shipping_fee,
+        "total_amount": total_amount,
         "priority_score": priority_score,
-        "estimated_delivery_time": eta_result['eta_minutes'],
-        "delivery_window_start": order_request.get('delivery_window_start'),
-        "delivery_window_end": order_request.get('delivery_window_end'),
-        "requires_cold_chain": requires_cold_chain,
-        "is_fragile": is_fragile,
-        "total_weight_kg": total_weight,
-        "total_volume_m3": total_volume
+        "priority_class": priority_class,
+        "priority_breakdown": json.dumps(priority_result.get('breakdown', {}))
     })
 
     # 9. Create Order Items
     sql_item = text("""
         INSERT INTO order_items (
-            id, order_id, product_id, quantity, unit_price, total_price,
-            created_at, updated_at
+            id, order_id, product_id, quantity, unit_price, subtotal,
+            expiration_datetime, temperature_zone,
+            created_at
         ) VALUES (
-            :id, :order_id, :product_id, :quantity, :unit_price, :total_price,
-            NOW(), NOW()
+            :id, :order_id, :product_id, :quantity, :unit_price, :subtotal,
+            :expiration_datetime, :temperature_zone,
+            NOW()
         )
     """)
 
     for item in items:
         product = products[item['product_id']]
+        item_subtotal = product['price'] * item['quantity']
+        expiration_hours = product.get('typical_expiration_hours', 24)
+        expiration_datetime = datetime.now() + timedelta(hours=expiration_hours)
+
         conn.execute(sql_item, {
             "id": str(uuid.uuid4()),
             "order_id": order_id,
             "product_id": item['product_id'],
             "quantity": item['quantity'],
             "unit_price": product['price'],
-            "total_price": product['price'] * item['quantity']
+            "subtotal": item_subtotal,
+            "expiration_datetime": expiration_datetime,
+            "temperature_zone": product.get('temperature_requirement', 'ambient')
         })
 
-    # 10. Update Inventory
+    # 10. Get Driver & Vehicle
+    driver_id = get_available_driver(conn)
+    vehicle_id = get_available_vehicle(conn)
+
+    if not driver_id:
+        raise ValueError("No available driver found")
+    if not vehicle_id:
+        raise ValueError("No available vehicle found")
+
+    # 11. Create Delivery Record
+    delivery_number = generate_delivery_number()
+
+    # Calculate Haversine Distance
+    pickup_lat = store['lat']
+    pickup_lon = store['lon']
+
+    dlat = math.radians(delivery_lat - pickup_lat)
+    dlon = math.radians(delivery_lon - pickup_lon)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(pickup_lat)) * math.cos(math.radians(delivery_lat)) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    estimated_distance = 6371 * c
+
+    # Assuming 30 km/h average speed for duration estimate
+    estimated_duration = int((estimated_distance / 30) * 60)
+
+    sql_delivery = text("""
+        INSERT INTO deliveries (
+            id, delivery_number, order_id, driver_id, vehicle_id,
+            delivery_status,
+            pickup_location, pickup_latitude, pickup_longitude,
+            delivery_location, delivery_latitude, delivery_longitude,
+            estimated_distance_km, estimated_duration_min,
+            created_at, updated_at
+        ) VALUES (
+            :id, :delivery_number, :order_id, :driver_id, :vehicle_id,
+            :delivery_status,
+            :pickup_location, :pickup_latitude, :pickup_longitude,
+            :delivery_location, :delivery_latitude, :delivery_longitude,
+            :estimated_distance_km, :estimated_duration_min,
+            NOW(), NOW()
+        )
+    """)
+
+    conn.execute(sql_delivery, {
+        "id": str(uuid.uuid4()),
+        "delivery_number": delivery_number,
+        "order_id": order_id,
+        "driver_id": driver_id,
+        "vehicle_id": vehicle_id,
+        "delivery_status": "pending",
+        "pickup_location": store['address'],
+        "pickup_latitude": pickup_lat,
+        "pickup_longitude": pickup_lon,
+        "delivery_location": delivery_address,
+        "delivery_latitude": delivery_lat,
+        "delivery_longitude": delivery_lon,
+        "estimated_distance_km": round(estimated_distance, 2),
+        "estimated_duration_min": estimated_duration
+    })
+
+    # 12. Update Inventory
     for item in items:
         update_inventory(store['id'], item['product_id'], item['quantity'], conn)
 
-    # 11. Log to system_logs
-    log_to_system_logs(
-        "INFO", "OrderCreation", f"Order {order_id} created successfully",
-        {
-            "order_id": order_id,
-            "customer_id": customer['id'],
-            "store_id": store['id'],
-            "total_price": total_price,
-            "priority_score": priority_score
-        },
-        conn
-    )
+    print(f"✅ Order {order_number} created successfully")
 
     return {
         "order_id": order_id,
-        "customer": customer,
-        "store": store,
+        "order_number": order_number,
+        "delivery_number": delivery_number,
+        "customer": {
+            "id": customer['id'],
+            "name": customer['name'],
+            "phone": customer['phone']
+        },
+        "store": {
+            "id": store['id'],
+            "name": store['name'],
+            "address": store['address']
+        },
         "items": enriched_items,
-        "total_price": round(total_price, 2),
-        "total_weight_kg": round(total_weight, 3),
-        "total_volume_m3": round(total_volume, 3),
+        "subtotal": round(subtotal, 2),
+        "tax": round(tax, 2),
+        "shipping_fee": round(shipping_fee, 2),
+        "total_amount": round(total_amount, 2),
+        "total_weight_kg": round(total_weight, 2),
         "priority_score": round(priority_score, 2),
+        "priority_class": priority_class,
         "priority_breakdown": priority_result.get('breakdown', {}),
-        "estimated_delivery_time_min": eta_result['eta_minutes'],
-        "distance_km": eta_result.get('distance_km', 0),
-        "status": "pending",
+        "estimated_distance_km": round(estimated_distance, 2),
+        "estimated_duration_min": estimated_duration,
+        "order_status": "pending",
+        "delivery_status": "pending",
         "requires_cold_chain": requires_cold_chain,
         "is_fragile": is_fragile,
+        "driver_id": driver_id,
+        "vehicle_id": vehicle_id,
+        "delivery_window_start": delivery_window_start.isoformat(),
+        "delivery_window_end": delivery_window_end.isoformat(),
         "created_at": datetime.now().isoformat()
     }
-
-
-def log_to_system_logs(level: str, log_type: str, message: str, details: Dict, conn):
-    """Log to system_logs table"""
-    sql = text("""
-        INSERT INTO system_logs (id, log_level, log_type, message, details, user_id, ip_address, created_at)
-        VALUES (:id, :log_level, :log_type, :message, :details, :user_id, :ip_address, NOW())
-    """)
-    try:
-        conn.execute(sql, {
-            "id": str(uuid.uuid4()),
-            "log_level": level,
-            "log_type": log_type,
-            "message": message,
-            "details": json.dumps(details),
-            "user_id": "lambda:OrderManagement",
-            "ip_address": "system"
-        })
-    except Exception as e:
-        print(f"❌ Log Error: {e}")
 
 
 # ==================== Response Helpers ====================
@@ -412,11 +593,16 @@ def log_to_system_logs(level: str, log_type: str, message: str, details: Dict, c
 def create_success_response(result: Dict, execution_time_ms: float) -> Dict:
     return {
         'statusCode': 200,
-        'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        },
         'body': json.dumps({
             'success': True,
             'execution_time_ms': execution_time_ms,
-            'result': result
+            'order': result
         }, ensure_ascii=False, indent=2, default=str)
     }
 
@@ -424,7 +610,12 @@ def create_success_response(result: Dict, execution_time_ms: float) -> Dict:
 def create_error_response(status_code: int, error: str, details: Any = None) -> Dict:
     return {
         'statusCode': status_code,
-        'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        },
         'body': json.dumps({
             'success': False,
             'error': error,
@@ -436,18 +627,48 @@ def create_error_response(status_code: int, error: str, details: Any = None) -> 
 # ==================== Lambda Handler ====================
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Lambda Handler for Order Management with Real Data
+
+    Real Data Input:
+    {
+        "customer_id": "c41bc929-a148-4e92-b698-1a780f2a7eac",
+        "store_id": "3256c040-99e6-45b4-8a35-bb0617147c56",
+        "items": [
+            {"product_id": "30d2f854-d611-4993-a2aa-9c920327435c", "quantity": 2},
+            {"product_id": "35c26291-ac14-400d-ad3f-a8886f0c33dc", "quantity": 2}
+        ],
+        "delivery_latitude": 13.7563,
+        "delivery_longitude": 100.5018
+    }
+    """
     start_time = time.time()
-    request_id = context.request_id if hasattr(context, 'request_id') else "local"
+
+    if event.get('httpMethod') == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type'
+            },
+            'body': ''
+        }
 
     if not db_engine:
         return create_error_response(500, "Database connection not available")
 
     try:
-        # Parse Input
-        body = json.loads(event['body']) if 'body' in event else event
+        if isinstance(event.get('body'), str):
+            body = json.loads(event['body'])
+        elif 'body' in event:
+            body = event['body']
+        else:
+            body = event
 
-        # Validation
-        required_fields = ['customer_id', 'store_id', 'items']
+        print(f"📦 Received order request: {json.dumps(body, default=str)[:200]}...")
+
+        required_fields = ['customer_id', 'items']
         for field in required_fields:
             if field not in body:
                 return create_error_response(400, f"Missing required field: {field}")
@@ -461,16 +682,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if item['quantity'] <= 0:
                 return create_error_response(400, "Quantity must be greater than 0")
 
-        print(f"🛒 Creating order for customer {body['customer_id']} from store {body['store_id']}")
+        print(f"🛒 Creating order for customer {body['customer_id']}")
 
-        # Create Order
         with db_engine.connect() as conn:
             with conn.begin():
                 result = create_order(body, conn)
 
         execution_time = round((time.time() - start_time) * 1000, 2)
 
-        print(f"✅ Order {result['order_id']} created successfully")
+        print(f"✅ Order {result['order_number']} created in {execution_time}ms")
         return create_success_response(result, execution_time)
 
     except ValueError as e:
@@ -484,3 +704,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         traceback.print_exc()
         execution_time = round((time.time() - start_time) * 1000, 2)
         return create_error_response(500, f"Internal server error: {str(e)}")
+
+
+if __name__ == "__main__":
+    # Simulate a successful test case based on user's input with the fix
+    test_event_success = {
+        "customer_id": "c41bc929-a148-4e92-b698-1a780f2a7eac",
+        "store_id": "3256c040-99e6-45b4-8a35-bb0617147c56", # This ID is now properly used
+        "items": [
+            {"product_id": "30d2f854-d611-4993-a2aa-9c920327435c", "quantity": 2}
+        ],
+        "delivery_latitude": 14.0728,
+        "delivery_longitude": 100.6082
+    }
+
+    class MockContext:
+        request_id = "local-test-fixed"
+
+    # NOTE: To run this successfully, the environment variable DATABASE_URL must be set
+    # and the database must contain the customer, store, product, inventory (with stock > 2
+    # for product '30d2f854-d611-4993-a2aa-9c920327435c' at store '3256c040-99e6-45b4-8a35-bb0617147c56'),
+    # driver, and vehicle data.
+
+    # result = lambda_handler(test_event_success, MockContext())
+    # print(json.dumps(result, indent=2, ensure_ascii=False))
+
+    print("\n--- Code structure is updated. Execution requires live DB/Env vars ---")
